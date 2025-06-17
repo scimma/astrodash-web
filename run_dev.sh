@@ -1,35 +1,55 @@
 #!/bin/bash
 
-# Kill any existing processes on ports 3001 and 5001
-pkill -f "node.*3001" || true
-pkill -f "python.*5001" || true
-
-# Start the backend server
-cd backend
-export FLASK_RUN_PORT=5001
-python app.py &
-BACKEND_PID=$!
-
-# Start the frontend server
-cd ../frontend
-export PORT=3001
-npm start &
-FRONTEND_PID=$!
-
-# Function to handle script termination
+# Function to handle cleanup on script exit
 cleanup() {
-    echo "Stopping servers..."
-    kill $BACKEND_PID
-    kill $FRONTEND_PID
+    echo "Shutting down servers..."
+    kill $(jobs -p) 2>/dev/null
     exit
 }
 
-# Set up trap to catch termination signal
-trap cleanup SIGINT SIGTERM
+# Set up trap for cleanup
+trap cleanup EXIT INT TERM
 
-echo "Backend running on http://localhost:5001"
-echo "Frontend running on http://localhost:3001"
-echo "Press Ctrl+C to stop both servers"
+# Kill any processes using ports 5000 and 5173
+echo "Checking for existing processes..."
+if lsof -ti:5000 > /dev/null; then
+    echo "Killing process on port 5000..."
+    kill $(lsof -ti:5000) 2>/dev/null
+fi
 
-# Wait for both processes
+if lsof -ti:3000 > /dev/null; then
+    echo "Killing process on port 3000..."
+    kill $(lsof -ti:3000) 2>/dev/null
+fi
+
+# Start backend server
+echo "Starting backend server..."
+cd backend && python run.py &
+BACKEND_PID=$!
+
+# Wait for backend to be ready
+echo "Waiting for backend to be ready..."
+until curl -s http://localhost:5000/health > /dev/null; do
+    sleep 1
+done
+echo "Backend is ready!"
+
+# Start frontend server
+echo "Starting frontend server..."
+cd frontend && npm start &
+FRONTEND_PID=$!
+
+# Wait for frontend to be ready
+echo "Waiting for frontend to be ready..."
+until curl -s http://localhost:3000 > /dev/null; do
+    sleep 1
+done
+echo "Frontend is ready!"
+
+echo "Development servers are running!"
+echo "Backend: http://localhost:5000"
+echo "Frontend: http://localhost:3000"
+echo "Press Ctrl+C to stop all servers"
+
+# Keep script running
 wait

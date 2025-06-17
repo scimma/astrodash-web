@@ -1,59 +1,80 @@
-from flask import Flask, jsonify, request
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
-from dotenv import load_dotenv
-import numpy as np
-from werkzeug.utils import secure_filename
+from services.spectrum_processor import SpectrumProcessor
+from services.classifier import SupernovaClassifier
 
-# Load environment variables
-load_dotenv()
+def create_app():
+    app = Flask(__name__)
+    CORS(app)
 
-app = Flask(__name__)
-CORS(app)  # Enable CORS for all routes
+    # Initialize services
+    spectrum_processor = SpectrumProcessor()
+    classifier = SupernovaClassifier()
 
-# Configure upload folder
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'fits', 'dat', 'txt'}
+    @app.route('/health', methods=['GET'])
+    def health_check():
+        return jsonify({'status': 'healthy'})
 
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+    @app.route('/api/osc-references', methods=['GET'])
+    def get_osc_references():
+        """Get a list of available OSC references."""
+        try:
+            # Get the list of available spectra from the data directory
+            data_dir = os.path.join(os.path.dirname(__file__), 'data')
+            available_refs = []
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+            # Walk through the data directory
+            for root, dirs, files in os.walk(data_dir):
+                for file in files:
+                    if file.endswith('.dat'):
+                        # Extract the OSC reference from the filename
+                        # Assuming filename format: osc-snXXXXXX-X.dat
+                        ref = file.replace('.dat', '')
+                        available_refs.append(ref)
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+            return jsonify({
+                'status': 'success',
+                'references': available_refs
+            })
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': str(e)
+            }), 500
 
-# Basic route for testing
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    return jsonify({"status": "healthy", "message": "AstroDASH API is running"})
+    @app.route('/process', methods=['POST'])
+    def process_spectrum():
+        try:
+            # Get parameters from request
+            params = request.form.get('params')
+            if params:
+                params = json.loads(params)
+            else:
+                params = {}
 
-# Route to get spectrum data
-@app.route('/api/spectrum', methods=['GET'])
-def get_spectrum():
-    # TODO: Implement spectrum data retrieval from S3
-    return jsonify({"message": "Spectrum endpoint"})
+            # Get file from request if present
+            file = request.files.get('file')
 
-# Route to process spectrum
-@app.route('/api/process', methods=['POST'])
-def process_spectrum():
-    data = request.json
-    smoothing = data.get('smoothing', 0.5)
-    known_z = data.get('knownZ', False)
-    z_value = data.get('zValue', 0)
+            # Process spectrum
+            result = spectrum_processor.process(
+                file=file,
+                osc_ref=params.get('oscRef'),
+                smoothing=params.get('smoothing', 0),
+                known_z=params.get('knownZ', False),
+                z_value=params.get('zValue'),
+                min_wave=params.get('minWave'),
+                max_wave=params.get('maxWave'),
+                classify_host=params.get('classifyHost', False),
+                calculate_rlap=params.get('calculateRlap', False)
+            )
 
-    # Generate mock data
-    x = np.linspace(0, 10, 100)
-    y = np.sin(x) * np.exp(-x/5) + np.random.normal(0, 0.1, 100)
+            return jsonify(result)
 
-    # Apply smoothing
-    y_smooth = np.convolve(y, np.ones(smoothing*10)/smoothing/10, mode='same')
+        except Exception as e:
+            return jsonify({
+                'status': 'error',
+                'message': str(e)
+            }), 500
 
-    return jsonify({
-        'x': x.tolist(),
-        'y': y_smooth.tolist(),
-        'z': z_value if known_z else None
-    })
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    return app
