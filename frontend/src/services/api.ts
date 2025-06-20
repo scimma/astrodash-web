@@ -79,7 +79,7 @@ class Api {
         },
       });
       console.log('API: Received response:', response.data);
-      return response.data;
+    return response.data;
     } catch (error) {
       console.error('API: Error making request:', error);
       throw error;

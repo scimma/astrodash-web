@@ -20,6 +20,8 @@ import {
   InputLabel,
   Tooltip,
   ListSubheader,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -28,6 +30,7 @@ import Brightness7Icon from '@mui/icons-material/Brightness7';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ReferenceLine } from 'recharts';
 import { api, ProcessParams, ProcessResponse } from '../services/api';
 import { ResponsiveContainer } from 'recharts';
+import axios from 'axios';
 
 interface SupernovaClassifierProps {
   toggleColorMode: () => void;
@@ -71,6 +74,22 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   // Add OSC reference state
   const [oscRef, setOscRef] = useState<string>('');
 
+  // Add state for dynamic dropdown options
+  const [snTypeOptions, setSnTypeOptions] = useState<string[]>([]);
+  const [ageOptions, setAgeOptions] = useState<string[]>([]);
+  const [hostOptions, setHostOptions] = useState<string[]>([]);
+
+  // Add state for template navigation
+  const [currentMatchIndex, setCurrentMatchIndex] = useState<number>(0);
+
+  // Add state for template spectrum
+  type TemplateSpectrum = { wave: number[]; flux: number[]; sn_type: string; age_bin: string; host_type: string };
+  const [templateSpectrum, setTemplateSpectrum] = useState<TemplateSpectrum | null>(null);
+
+  // Add state for error handling
+  const [error, setError] = useState<string | null>(null);
+  const [errorOpen, setErrorOpen] = useState(false);
+
   // Add useEffect to log spectrumData changes
   useEffect(() => {
     if (spectrumData) {
@@ -82,6 +101,49 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       }
     }
   }, [spectrumData]);
+
+  // Fetch analysis options on mount
+  useEffect(() => {
+    axios.get('/api/analysis-options').then(res => {
+      setSnTypeOptions(res.data.sn_types || []);
+      setAgeOptions(res.data.age_bins || []);
+      setHostOptions(res.data.host_types || []);
+    });
+  }, []);
+
+  // When dropdowns change, randomly select a best match and update analysis
+  useEffect(() => {
+    if (bestMatches.length > 0) {
+      // Find all matches that match the selected SN type, age, and host
+      const filtered = bestMatches.filter(m =>
+        (!snType || m.type === snType) &&
+        (!age || m.age === age) &&
+        (!hostType || m.host === hostType)
+      );
+      if (filtered.length > 0) {
+        // Randomly pick one
+        const idx = Math.floor(Math.random() * filtered.length);
+        setCurrentMatchIndex(idx);
+        setSnType(filtered[idx].type);
+        setAge(filtered[idx].age);
+        setHostType(filtered[idx].host);
+        // Optionally update plot/analysis here
+      }
+    }
+  }, [snType, age, hostType, bestMatches]);
+
+  // Fetch template spectrum when SN Type, Age, or Host changes
+  useEffect(() => {
+    if (snType && age && hostType) {
+      axios.get('/api/template-spectrum', {
+        params: { sn_type: snType, age_bin: age, host_type: hostType }
+      }).then(res => {
+        setTemplateSpectrum(res.data);
+      }).catch(() => setTemplateSpectrum(null));
+    } else {
+      setTemplateSpectrum(null);
+    }
+  }, [snType, age, hostType]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -116,6 +178,8 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     });
 
     setLoading(true);
+    setError(null);
+    setErrorOpen(false);
     try {
       const params: ProcessParams = {
         smoothing,
@@ -133,6 +197,25 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       const response = await api.processSpectrum(params);
       console.log('Received response:', response);
 
+      // Type guard for error response
+      const isErrorResponse = (resp: any): resp is { status?: string; error?: string; message?: string } => {
+        return (
+          (typeof resp === 'object') &&
+          (
+            (typeof resp.status === 'string' && resp.status === 'error') ||
+            typeof resp.error === 'string' ||
+            typeof resp.message === 'string'
+          )
+        );
+      };
+
+      if (isErrorResponse(response)) {
+        setError(response.message || response.error || 'An unknown error occurred.');
+        setErrorOpen(true);
+        setLoading(false);
+        return;
+      }
+
       setSpectrumData(response);
 
       // Update best matches
@@ -149,9 +232,17 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
         setAge(response.classification.best_match.age);
         setHostType(response.classification.best_match.host);
       }
-    } catch (error) {
+    } catch (error: any) {
+      // Try to extract error message from backend response
+      let msg = 'An error occurred while processing the spectrum.';
+      if (error.response && error.response.data) {
+        msg = error.response.data.message || error.response.data.error || msg;
+      } else if (error.message) {
+        msg = error.message;
+      }
+      setError(msg);
+      setErrorOpen(true);
       console.error('Error processing spectrum:', error);
-      // TODO: Add error handling UI
     } finally {
       setLoading(false);
     }
@@ -167,6 +258,8 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     setHostType('');
     setHostFraction(0);
     setRedshift(null);
+    setError(null);
+    setErrorOpen(false);
   };
 
   const handleDownload = () => {
@@ -190,8 +283,34 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     window.open('https://github.com/your-repo/astrodash-web/blob/main/README.md', '_blank');
   };
 
+  // Template navigation handlers
+  const handlePrevTemplate = () => {
+    if (bestMatches.length > 0) {
+      setCurrentMatchIndex((prev) => (prev - 1 + bestMatches.length) % bestMatches.length);
+      const match = bestMatches[(currentMatchIndex - 1 + bestMatches.length) % bestMatches.length];
+      setSnType(match.type);
+      setAge(match.age);
+      setHostType(match.host);
+    }
+  };
+  const handleNextTemplate = () => {
+    if (bestMatches.length > 0) {
+      setCurrentMatchIndex((prev) => (prev + 1) % bestMatches.length);
+      const match = bestMatches[(currentMatchIndex + 1) % bestMatches.length];
+      setSnType(match.type);
+      setAge(match.age);
+      setHostType(match.host);
+    }
+  };
+
   return (
     <Container maxWidth="xl" sx={{ py: 2 }}>
+      {/* Error Snackbar */}
+      <Snackbar open={errorOpen} autoHideDuration={8000} onClose={() => setErrorOpen(false)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
+        <Alert onClose={() => setErrorOpen(false)} severity="error" sx={{ width: '100%' }} variant="filled">
+          {error}
+        </Alert>
+      </Snackbar>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h4" component="h1" gutterBottom>Supernova Classifier</Typography>
         <Box>
@@ -416,23 +535,31 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                     <FormControl size="small" sx={{ minWidth: 120 }}>
                       <InputLabel>SN Type</InputLabel>
                       <Select value={snType} onChange={(e) => setSnType(e.target.value)}>
-                        <MenuItem value="Ia-norm">Ia-norm</MenuItem>
-                        <MenuItem value="Ia-91bg">Ia-91bg</MenuItem>
+                        {snTypeOptions.map((type) => (
+                          <MenuItem key={type} value={type}>
+                            {type}
+                          </MenuItem>
+                        ))}
                       </Select>
                     </FormControl>
                     <FormControl size="small" sx={{ minWidth: 120 }}>
                       <InputLabel>Age</InputLabel>
                       <Select value={age} onChange={(e) => setAge(e.target.value)}>
-                        <MenuItem value="-20 to -18">-20 to -18</MenuItem>
-                        <MenuItem value="-15 to -13">-15 to -13</MenuItem>
+                        {ageOptions.map((ageBin) => (
+                          <MenuItem key={ageBin} value={ageBin}>
+                            {ageBin}
+                          </MenuItem>
+                        ))}
                       </Select>
                     </FormControl>
                     <FormControl size="small" sx={{ minWidth: 120 }}>
                       <InputLabel>Host</InputLabel>
                       <Select value={hostType} onChange={(e) => setHostType(e.target.value)}>
-                        <MenuItem value="No Host">No Host</MenuItem>
-                        <MenuItem value="E">E</MenuItem>
-                        <MenuItem value="S0">S0</MenuItem>
+                        {hostOptions.map((host) => (
+                          <MenuItem key={host} value={host}>
+                            {host}
+                          </MenuItem>
+                        ))}
                       </Select>
                     </FormControl>
                   </Box>
@@ -447,7 +574,8 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                             key={spectrumData ? `spectrum-${spectrumData.spectrum.x[0]}` : 'no-spectrum'}
                             data={spectrumData.spectrum.x.map((x: number, i: number) => ({
                               x,
-                              y: spectrumData.spectrum.y[i]
+                              y: spectrumData.spectrum.y[i],
+                              template: templateSpectrum && templateSpectrum.wave[i] === x ? templateSpectrum.flux[i] : undefined
                             }))}
                             margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                           >
@@ -463,7 +591,18 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                               formatter={(value: number, name: string, props: any) => [`${props.payload.y.toFixed(6)}`, 'Flux']}
                               labelFormatter={(label: number) => `Wavelength: ${label.toFixed(2)} Å`}
                             />
-                            <Line type="monotone" dataKey="y" stroke="#8884d8" dot={false} />
+                            <Line type="monotone" dataKey="y" stroke="#8884d8" dot={false} name="Observed" />
+                            {templateSpectrum && (
+                              <Line
+                                type="monotone"
+                                dataKey="template"
+                                stroke="#d62728"
+                                dot={false}
+                                name="Template"
+                                isAnimationActive={false}
+                                connectNulls
+                              />
+                            )}
                           </LineChart>
                         </ResponsiveContainer>
                       </div>

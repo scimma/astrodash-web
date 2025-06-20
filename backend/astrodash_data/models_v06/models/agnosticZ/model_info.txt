@@ -1,0 +1,14 @@
+Date Time: 2018-08-13 10:13:54
+Directory: /mimsy/danmuth/DASH/DASH/dash/data_files_new_train100_agnosticZ/
+Add Host: True
+SN-Host fractions: [0.99, 0.98, 0.95, 0.93, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1]
+Classify Host: False
+Redshift: agnosticZ
+Redshift Range: 0.0 to 0.8
+Num of Redshifts: 1
+Redshift During Training: True
+Fraction of Training Set Used: 1.0
+Training Amount: 50 x 1000000
+Changed wavelength range to 3500 to 10000A
+Set outer region to 0.5
+Using 2 convolutional layers in neural network

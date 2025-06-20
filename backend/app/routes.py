@@ -3,6 +3,7 @@ import numpy as np
 import json
 from .services.spectrum_processor import SpectrumProcessor
 from .services.ml_classifier import MLClassifier
+from .services.astrodash_backend import get_training_parameters, AgeBinning
 
 main = Blueprint('main', __name__)
 spectrum_processor = SpectrumProcessor()
@@ -74,16 +75,20 @@ def process_spectrum():
 
         # Determine source of spectrum data (file or OSC reference)
         spectrum_data = None
-        if 'file' in request.files:
-            file = request.files['file']
-            if file:
-                app.logger.info(f"Received file: {file.filename}")
-                spectrum_data = spectrum_processor.read_file(file)
-        elif 'oscRef' in params:
-            osc_ref = params.get('oscRef')
-            if osc_ref:
-                app.logger.info(f"Received OSC reference: {osc_ref}")
-                spectrum_data = spectrum_processor.read_file(osc_ref)
+        try:
+            if 'file' in request.files:
+                file = request.files['file']
+                if file:
+                    app.logger.info(f"Received file: {file.filename}")
+                    spectrum_data = spectrum_processor.read_file(file)
+            elif 'oscRef' in params:
+                osc_ref = params.get('oscRef')
+                if osc_ref:
+                    app.logger.info(f"Received OSC reference: {osc_ref}")
+                    spectrum_data = spectrum_processor.read_file(osc_ref)
+        except RuntimeError as e:
+            app.logger.error(f"User-friendly error: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 400
 
         if not spectrum_data:
             return jsonify({"error": "No spectrum file or OSC reference provided"}), 400
@@ -132,3 +137,59 @@ def upload_file():
         return jsonify(spectrum_data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@main.route('/api/analysis-options', methods=['GET'])
+def get_analysis_options():
+    try:
+        try:
+            pars = get_training_parameters()
+            sn_types = pars['typeList']
+            host_types = ['No Host'] + pars.get('galTypeList', [])
+            age_binner = AgeBinning(pars['minAge'], pars['maxAge'], pars['ageBinSize'])
+            age_bins = age_binner.age_labels()
+        except Exception as e:
+            # Fallback to mock data if model files are missing
+            sn_types = ['Ia', 'Ib', 'Ic', 'II', 'IIn', 'IIb']
+            age_bins = ['-10 to -5', '-5 to 0', '0 to 5', '5 to 10', '10 to 15']
+            host_types = ['No Host', 'E', 'S0', 'Sa', 'Sb', 'Sc', 'Sd', 'Irr']
+        return jsonify({
+            'sn_types': sn_types,
+            'age_bins': age_bins,
+            'host_types': host_types
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@main.route('/api/template-spectrum', methods=['GET'])
+def get_template_spectrum():
+    sn_type = request.args.get('sn_type', 'Ia')
+    age_bin = request.args.get('age_bin', '0 to 5')
+    host_type = request.args.get('host_type', 'No Host')
+    try:
+        import sys
+        sys.path.insert(0, './astrodash')
+        from astrodash.data.read_binned_templates import load_templates, get_templates, combined_sn_and_host_data
+        import numpy as np
+        import os
+        # Path to the .npz file (relative to backend root)
+        npz_path = os.path.join(os.path.dirname(__file__), '../../astrodash/astrodash/data/models_v06/models/sn_and_host_templates.npz')
+        snTemplates, galTemplates = load_templates(npz_path)
+        # Use a default nw, w0, w1 (should match Astrodash defaults)
+        nw = 1024
+        w0 = 3500
+        w1 = 10000
+        # Get the template info
+        snInfos, snNames, hostInfos, hostNames = get_templates(sn_type, age_bin, host_type, snTemplates, galTemplates, nw)
+        # Use the first sub-template (legacy GUI allows navigation, but we just use the first)
+        snCoeff = 1.0
+        galCoeff = 0.0 if host_type == 'No Host' else 1.0
+        wave, flux, minMaxIndex = combined_sn_and_host_data(snCoeff, galCoeff, 0, snInfos[0], hostInfos[0], w0, w1, nw)
+        return jsonify({
+            'wave': wave.tolist(),
+            'flux': flux.tolist(),
+            'sn_type': sn_type,
+            'age_bin': age_bin,
+            'host_type': host_type
+        })
+    except Exception as e:
+        return jsonify({'error': str(e), 'wave': [], 'flux': [], 'sn_type': sn_type, 'age_bin': age_bin, 'host_type': host_type}), 404

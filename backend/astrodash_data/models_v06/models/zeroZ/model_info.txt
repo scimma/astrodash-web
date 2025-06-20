@@ -1,0 +1,12 @@
+Date Time: 2017-10-25 23:33:15
+Directory: data_files_zeroZ/
+Add Host: True
+SN-Host fractions: [0.01, 0.02, 0.05, 0.07, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+Classify Host: False
+Redshift: Zero
+Redshift Range: 0 to 0.
+Redshift Precision: 0.01
+Fraction of Training Set Used: 1.0
+Training Amount: 50 x 500000
+Changed wavelength range to 3500 to 10000A
+Set outer region to 0.5
