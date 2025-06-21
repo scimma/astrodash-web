@@ -13,13 +13,10 @@ import {
   ListItem,
   ListItemText,
   IconButton,
-  Divider,
   Select,
   MenuItem,
   FormControl,
   InputLabel,
-  Tooltip,
-  ListSubheader,
   Snackbar,
   Alert,
 } from '@mui/material';
@@ -27,10 +24,9 @@ import Grid from '@mui/material/Grid';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ReferenceLine } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
 import { api, ProcessParams, ProcessResponse } from '../services/api';
 import { ResponsiveContainer } from 'recharts';
-import axios from 'axios';
 
 interface SupernovaClassifierProps {
   toggleColorMode: () => void;
@@ -45,7 +41,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   // State for priors
   const [knownZ, setKnownZ] = useState<boolean>(false);
   const [zValue, setZValue] = useState<string>('');
-  const [classifyHost, setClassifyHost] = useState<boolean>(false);
   const [minWave, setMinWave] = useState<string>('3500');
   const [maxWave, setMaxWave] = useState<string>('10000');
   const [smoothing, setSmoothing] = useState<number>(0);
@@ -54,9 +49,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   // State for analysis
   const [snType, setSnType] = useState<string>('');
   const [age, setAge] = useState<string>('');
-  const [hostType, setHostType] = useState<string>('');
-  const [hostFraction, setHostFraction] = useState<number>(0);
-  const [redshift, setRedshift] = useState<number | null>(null);
   const [spectrumData, setSpectrumData] = useState<ProcessResponse | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -64,7 +56,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   const [bestMatches, setBestMatches] = useState<Array<{
     type: string;
     age: string;
-    host: string;
     probability: number;
     redshift?: number;
     rlap?: number;
@@ -77,13 +68,12 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   // Add state for dynamic dropdown options
   const [snTypeOptions, setSnTypeOptions] = useState<string[]>([]);
   const [ageOptions, setAgeOptions] = useState<string[]>([]);
-  const [hostOptions, setHostOptions] = useState<string[]>([]);
 
   // Add state for template navigation
   const [currentMatchIndex, setCurrentMatchIndex] = useState<number>(0);
 
   // Add state for template spectrum
-  type TemplateSpectrum = { wave: number[]; flux: number[]; sn_type: string; age_bin: string; host_type: string };
+  type TemplateSpectrum = { wave: number[]; flux: number[]; sn_type: string; age_bin: string; };
   const [templateSpectrum, setTemplateSpectrum] = useState<TemplateSpectrum | null>(null);
 
   // Add state for error handling
@@ -104,10 +94,13 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
 
   // Fetch analysis options on mount
   useEffect(() => {
-    axios.get('/api/analysis-options').then(res => {
-      setSnTypeOptions(res.data.sn_types || []);
-      setAgeOptions(res.data.age_bins || []);
-      setHostOptions(res.data.host_types || []);
+    api.getAnalysisOptions().then(res => {
+      setSnTypeOptions(res.sn_types || []);
+      setAgeOptions(res.age_bins || []);
+    }).catch(error => {
+      console.error("Failed to fetch analysis options:", error);
+      setError("Failed to load classification data. Please try again later.");
+      setErrorOpen(true);
     });
   }, []);
 
@@ -117,8 +110,7 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       // Find all matches that match the selected SN type, age, and host
       const filtered = bestMatches.filter(m =>
         (!snType || m.type === snType) &&
-        (!age || m.age === age) &&
-        (!hostType || m.host === hostType)
+        (!age || m.age === age)
       );
       if (filtered.length > 0) {
         // Randomly pick one
@@ -126,24 +118,21 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
         setCurrentMatchIndex(idx);
         setSnType(filtered[idx].type);
         setAge(filtered[idx].age);
-        setHostType(filtered[idx].host);
         // Optionally update plot/analysis here
       }
     }
-  }, [snType, age, hostType, bestMatches]);
+  }, [snType, age, bestMatches]);
 
   // Fetch template spectrum when SN Type, Age, or Host changes
   useEffect(() => {
-    if (snType && age && hostType) {
-      axios.get('/api/template-spectrum', {
-        params: { sn_type: snType, age_bin: age, host_type: hostType }
-      }).then(res => {
-        setTemplateSpectrum(res.data);
+    if (snType && age) {
+      api.getTemplateSpectrum(snType, age).then(res => {
+        setTemplateSpectrum(res);
       }).catch(() => setTemplateSpectrum(null));
     } else {
       setTemplateSpectrum(null);
     }
-  }, [snType, age, hostType]);
+  }, [snType, age]);
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -171,7 +160,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       zValue: knownZ ? parseFloat(zValue) : undefined,
       minWave: parseInt(minWave),
       maxWave: parseInt(maxWave),
-      classifyHost,
       calculateRlap,
       file: selectedFile ? selectedFile.name : undefined,
       oscRef: oscRef || undefined
@@ -187,7 +175,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
         zValue: knownZ ? parseFloat(zValue) : undefined,
         minWave: parseInt(minWave),
         maxWave: parseInt(maxWave),
-        classifyHost,
         calculateRlap,
         file: selectedFile || undefined,
         oscRef: oscRef || undefined
@@ -221,16 +208,10 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       // Update best matches
       setBestMatches(response.classification.best_matches);
 
-      // Update redshift if available
-      if (response.spectrum.redshift) {
-        setRedshift(response.spectrum.redshift);
-      }
-
       // Update SN type and age from best match
       if (response.classification.best_match) {
         setSnType(response.classification.best_match.type);
         setAge(response.classification.best_match.age);
-        setHostType(response.classification.best_match.host);
       }
     } catch (error: any) {
       // Try to extract error message from backend response
@@ -255,9 +236,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     setBestMatches([]);
     setSnType('');
     setAge('');
-    setHostType('');
-    setHostFraction(0);
-    setRedshift(null);
     setError(null);
     setErrorOpen(false);
   };
@@ -281,26 +259,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
 
   const handleHelp = () => {
     window.open('https://github.com/your-repo/astrodash-web/blob/main/README.md', '_blank');
-  };
-
-  // Template navigation handlers
-  const handlePrevTemplate = () => {
-    if (bestMatches.length > 0) {
-      setCurrentMatchIndex((prev) => (prev - 1 + bestMatches.length) % bestMatches.length);
-      const match = bestMatches[(currentMatchIndex - 1 + bestMatches.length) % bestMatches.length];
-      setSnType(match.type);
-      setAge(match.age);
-      setHostType(match.host);
-    }
-  };
-  const handleNextTemplate = () => {
-    if (bestMatches.length > 0) {
-      setCurrentMatchIndex((prev) => (prev + 1) % bestMatches.length);
-      const match = bestMatches[(currentMatchIndex + 1) % bestMatches.length];
-      setSnType(match.type);
-      setAge(match.age);
-      setHostType(match.host);
-    }
   };
 
   return (
@@ -397,16 +355,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
               )}
             </Box>
 
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={classifyHost}
-                  onChange={(e) => setClassifyHost(e.target.checked)}
-                />
-              }
-              label="Classify Host"
-            />
-
             <Box sx={{ mt: 2 }}>
               <Typography gutterBottom>Wavelength Range</Typography>
               <Box sx={{ display: 'flex', gap: 1 }}>
@@ -488,7 +436,7 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                         <ListItem key={index}>
                           <ListItemText
                             primary={`${match.type} (${match.age})`}
-                            secondary={`Host: ${match.host}, Prob: ${(match.probability * 100).toFixed(1)}%`}
+                            secondary={`Prob: ${(match.probability * 100).toFixed(1)}%`}
                           />
                         </ListItem>
                       ))}
@@ -498,10 +446,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                     <Box sx={{ textAlign: 'center' }}>
                       <Typography variant="h6" gutterBottom>Best Match</Typography>
                       <Box sx={{ display: 'flex', justifyContent: 'space-around' }}>
-                        <Box>
-                          <Typography>Host Type</Typography>
-                          <Typography variant="body2">{bestMatches[0]?.host || 'N/A'}</Typography>
-                        </Box>
                         <Box>
                           <Typography>SN Type</Typography>
                           <Typography variant="body2">{bestMatches[0]?.type || 'N/A'}</Typography>
@@ -548,16 +492,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                         {ageOptions.map((ageBin) => (
                           <MenuItem key={ageBin} value={ageBin}>
                             {ageBin}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                    <FormControl size="small" sx={{ minWidth: 120 }}>
-                      <InputLabel>Host</InputLabel>
-                      <Select value={hostType} onChange={(e) => setHostType(e.target.value)}>
-                        {hostOptions.map((host) => (
-                          <MenuItem key={host} value={host}>
-                            {host}
                           </MenuItem>
                         ))}
                       </Select>

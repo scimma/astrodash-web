@@ -7,21 +7,26 @@ from .astrodash_backend import (
 )
 
 class MLClassifier:
-    def __init__(self, data_files='models_v06'):
-        self.data_files = data_files
-        self.pars = get_training_parameters(data_files)
+    def __init__(self):
+        self.pars = get_training_parameters()
 
-        backend_dir = os.path.dirname(os.path.abspath(__file__))
-        # Update model path to look for a PyTorch file
-        self.model_path = os.path.join(backend_dir, '..', '..', 'astrodash_data', data_files, 'models', 'zeroZ', 'pytorch_model.pth')
+        services_dir = os.path.dirname(os.path.abspath(__file__))
+        backend_root = os.path.join(services_dir, '..', '..')
+        models_base_path = os.path.join(backend_root, 'astrodash_models')
+
+        self.model_path_zero_z = os.path.join(models_base_path, 'zeroZ', 'zero_z_pytorch.pth')
+        self.model_path_agnostic_z = os.path.join(models_base_path, 'agnosticZ', 'agnostic_z_pytorch.pth')
 
     def classify(self, processed_data):
         """Classify spectrum data and return results using the PyTorch-based backend"""
 
+        known_z = processed_data.get('known_z', False)
+        model_path = self.model_path_zero_z if known_z else self.model_path_agnostic_z
+
         # Check if the PyTorch model file exists
-        if not os.path.exists(self.model_path):
+        if not os.path.exists(model_path):
             # Return a mock response if the model is not found
-            return self._mock_classification_response(processed_data)
+            return self._mock_classification_response(processed_data, model_path)
 
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
             np.savetxt(f, np.array([processed_data['x'], processed_data['y']]).T)
@@ -34,23 +39,22 @@ class MLClassifier:
                 smooth=0,
                 pars=self.pars,
                 min_wave=min(processed_data['x']),
-                max_wave=max(processed_data['x']),
-                classify_host=processed_data.get('classify_host', False)
+                max_wave=max(processed_data['x'])
             )
 
             input_images, _, type_names_list, nw, n_bins, _ = load_spectra.input_spectra()
 
-            best_types_list = BestTypesListSingleRedshift(self.model_path, input_images, type_names_list, nw, n_bins)
+            best_types_list = BestTypesListSingleRedshift(model_path, input_images, type_names_list, nw, n_bins)
 
             matches = []
             if best_types_list.best_types:
                 for i in range(len(best_types_list.best_types[0])):
                     classification = best_types_list.best_types[0][i]
                     probability = best_types_list.softmax_ordered[0][i]
-                    host, sn_name, sn_age = classification_split(classification)
+                    _, sn_name, sn_age = classification_split(classification)
 
                     matches.append({
-                        'type': sn_name, 'age': sn_age, 'host': host,
+                        'type': sn_name, 'age': sn_age,
                         'probability': float(probability),
                         'redshift': processed_data['redshift'],
                         'rlap': processed_data.get('rlap_score'),
@@ -58,14 +62,14 @@ class MLClassifier:
                     })
 
             if not matches:
-                return self._mock_classification_response(processed_data)
+                return self._mock_classification_response(processed_data, model_path)
 
-            best_match_list_for_prob = [[m['host'], m['type'], m['age'], m['probability']] for m in matches]
-            host, best_type, best_age, prob_total, reliable_flag = combined_prob(best_match_list_for_prob)
+            best_match_list_for_prob = [[m['type'], m['age'], m['probability']] for m in matches]
+            best_type, best_age, prob_total, reliable_flag = combined_prob(best_match_list_for_prob)
 
             best_match = {
                 'type': best_type, 'age': best_age, 'probability': prob_total,
-                'host': host, 'redshift': processed_data['redshift']
+                'redshift': processed_data['redshift']
             }
 
             for m in matches:
@@ -81,11 +85,11 @@ class MLClassifier:
             if os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
 
-    def _mock_classification_response(self, processed_data):
+    def _mock_classification_response(self, processed_data, model_path_not_found):
         """Returns a mock response for when the PyTorch model is not available."""
-        print("Warning: PyTorch model not found. Returning mock classification.")
+        print(f"Warning: PyTorch model not found at {model_path_not_found}. Returning mock classification.")
         mock_match = {
-            'type': 'Ia-norm', 'age': '0 to 5', 'host': 'No Host',
+            'type': 'Ia-norm', 'age': '0 to 5',
             'probability': 0.99, 'redshift': processed_data['redshift'],
             'rlap': processed_data.get('rlap_score'), 'reliable': True
         }

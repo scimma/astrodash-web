@@ -53,12 +53,13 @@ class AstroDashPyTorchNet(nn.Module):
 
 # --- Core AstroDash Logic (Modernized) ---
 
-def get_training_parameters(data_files='models_v06'):
+def get_training_parameters():
     """Load training parameters from the model directory"""
-    backend_dir = os.path.dirname(os.path.abspath(__file__))
-    models_dir = os.path.join(backend_dir, '..', '..', 'astrodash_data', data_files)
+    services_dir = os.path.dirname(os.path.abspath(__file__))
+    backend_root = os.path.join(services_dir, '..', '..')
+    models_dir = os.path.join(backend_root, 'astrodash_models')
 
-    with open(os.path.join(models_dir, "models/zeroZ/training_params.pickle"), 'rb') as f:
+    with open(os.path.join(models_dir, "zeroZ/training_params.pickle"), 'rb') as f:
         # Use encoding='latin1' for compatibility with Python 2 pickles
         pars = pickle.load(f, encoding='latin1')
     return pars
@@ -91,23 +92,16 @@ class AgeBinning:
 
 class CreateLabels:
     """Create classification labels"""
-    def __init__(self, n_types, min_age, max_age, age_bin_size, type_list, host_list=None, n_host_types=1):
+    def __init__(self, n_types, min_age, max_age, age_bin_size, type_list):
         self.n_types = n_types
         self.age_binning = AgeBinning(min_age, max_age, age_bin_size)
         self.type_list = type_list
-        self.host_list = host_list
 
     def type_names_list(self):
         type_names_list = []
-        if self.host_list is None:
-            for t_type in self.type_list:
-                for age_label in self.age_binning.age_labels():
-                    type_names_list.append(f"{t_type}: {age_label}")
-        else:
-            for host in self.host_list:
-                for t_type in self.type_list:
-                    for age_label in self.age_binning.age_labels():
-                        type_names_list.append(f"{host}: {t_type}: {age_label}")
+        for t_type in self.type_list:
+            for age_label in self.age_binning.age_labels():
+                type_names_list.append(f"{t_type}: {age_label}")
         return np.array(type_names_list)
 
 
@@ -211,15 +205,14 @@ class SpectrumProcessor:
 
 class LoadInputSpectra:
     """Load and process input spectra for classification"""
-    def __init__(self, file_path_or_data, z, smooth, pars, min_wave, max_wave, classify_host):
+    def __init__(self, file_path_or_data, z, smooth, pars, min_wave, max_wave):
         self.nw = pars['nw']
         n_types, w0, w1, min_age, max_age, age_bin_size, type_list = (
             pars['nTypes'], pars['w0'], pars['w1'], pars['minAge'],
             pars['maxAge'], pars['ageBinSize'], pars['typeList']
         )
 
-        host_list = pars.get('galTypeList') if classify_host else None
-        self.type_names_list = CreateLabels(n_types, min_age, max_age, age_bin_size, type_list, host_list).type_names_list()
+        self.type_names_list = CreateLabels(n_types, min_age, max_age, age_bin_size, type_list).type_names_list()
         self.n_bins = len(self.type_names_list)
 
         processor = SpectrumProcessor(w0, w1, self.nw)
@@ -273,12 +266,12 @@ class BestTypesListSingleRedshift:
 
 def classification_split(classification_string):
     parts = classification_string.split(': ')
-    return (parts[0], parts[1], parts[2]) if len(parts) == 3 else ("", parts[0], parts[1])
+    return "", parts[0], parts[1]
 
 
 def combined_prob(best_match_list):
-    host_name, prev_name, age, _ = best_match_list[0]
-    prob_initial = float(best_match_list[0][3])
+    prev_name, age, _ = best_match_list[0]
+    prob_initial = float(best_match_list[0][2])
     best_name, prob_total = prev_name, 0.0
     prev_broad_type = prev_name[:2]
     ages_list = [int(v) for v in age.split(' to ')]
@@ -287,7 +280,7 @@ def combined_prob(best_match_list):
     prob_possible, ages_list_possible = 0., []
     prob_possible2, ages_list_possible2 = 0., []
 
-    for i, (host, name, age, prob) in enumerate(best_match_list[:10]):
+    for i, (name, age, prob) in enumerate(best_match_list[:10]):
         min_age, max_age = map(int, age.split(' to '))
         broad_type = "Ib" if "IIb" in name else name[:2]
 
@@ -313,7 +306,7 @@ def combined_prob(best_match_list):
     best_age = f'{min(ages_list)} to {max(ages_list)}'
     reliable_flag = prob_total > prob_initial
 
-    return host_name, best_name, best_age, round(prob_total, 4), reliable_flag
+    return best_name, best_age, round(prob_total, 4), reliable_flag
 
 # Other placeholder functions if needed by other services for API compatibility
 def load_templates(template_filename): return {}, {}

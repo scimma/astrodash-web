@@ -108,7 +108,7 @@ class SpectrumProcessor:
         except Exception as e:
             raise ValueError(f"Error reading text file: {str(e)}")
 
-    def process(self, x, y, smoothing, known_z, z_value, min_wave, max_wave, classify_host, calculate_rlap):
+    def process(self, x, y, smoothing, known_z, z_value, min_wave, max_wave, calculate_rlap):
         """Process spectrum data with given parameters using astrodash_backend logic"""
         wavelength = np.array(x)
         flux = np.array(y)
@@ -135,10 +135,6 @@ class SpectrumProcessor:
 
         redshift = self.calculate_redshift(wavelength, flux, known_z, z_value)
 
-        host_classification = "No Host"
-        if classify_host:
-            host_classification = "Host"
-
         rlap_score = None
         if calculate_rlap:
             rlap_score = self._calculate_rlap_score(flux)
@@ -147,10 +143,9 @@ class SpectrumProcessor:
             'x': wavelength.tolist(),
             'y': flux.tolist(),
             'redshift': redshift,
-            'host_classification': host_classification,
             'rlap_score': rlap_score,
-            'classify_host': classify_host,
-            'calculate_rlap': calculate_rlap
+            'calculate_rlap': calculate_rlap,
+            'known_z': known_z
         }
 
     def normalize_spectrum(self, wavelength, flux):

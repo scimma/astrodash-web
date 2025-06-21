@@ -13,7 +13,6 @@ export interface ProcessParams {
   zValue?: number;
   minWave: number;
   maxWave: number;
-  classifyHost: boolean;
   calculateRlap: boolean;
   file?: File;
   oscRef?: string;
@@ -29,7 +28,6 @@ export interface ProcessResponse {
     best_matches: Array<{
       type: string;
       age: string;
-      host: string;
       probability: number;
       redshift?: number;
       rlap?: number;
@@ -38,12 +36,23 @@ export interface ProcessResponse {
     best_match: {
       type: string;
       age: string;
-      host: string;
       probability: number;
       redshift?: number;
     };
     reliable_matches: boolean;
   };
+}
+
+export interface AnalysisOptionsResponse {
+  sn_types: string[];
+  age_bins: string[];
+}
+
+export interface TemplateSpectrumResponse {
+  wave: number[];
+  flux: number[];
+  sn_type: string;
+  age_bin: string;
 }
 
 class Api {
@@ -64,7 +73,6 @@ class Api {
       zValue: params.zValue,
       minWave: params.minWave,
       maxWave: params.maxWave,
-      classifyHost: params.classifyHost,
       calculateRlap: params.calculateRlap,
       oscRef: params.oscRef
     };
@@ -105,6 +113,18 @@ class Api {
       return response.data.references;
     }
     throw new Error(response.data.message || 'Failed to fetch OSC references');
+  }
+
+  async getAnalysisOptions(): Promise<AnalysisOptionsResponse> {
+    const response = await axios.get(`${API_BASE_URL}/api/analysis-options`);
+    return response.data;
+  }
+
+  async getTemplateSpectrum(snType: string, age: string): Promise<TemplateSpectrumResponse> {
+    const response = await axios.get(`${API_BASE_URL}/api/template-spectrum`, {
+      params: { sn_type: snType, age_bin: age }
+    });
+    return response.data;
   }
 }
 

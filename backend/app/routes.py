@@ -102,7 +102,6 @@ def process_spectrum():
             z_value=params.get('zValue'),
             min_wave=params.get('minWave'),
             max_wave=params.get('maxWave'),
-            classify_host=params.get('classifyHost', False),
             calculate_rlap=params.get('calculateRlap', False)
         )
 
@@ -144,18 +143,15 @@ def get_analysis_options():
         try:
             pars = get_training_parameters()
             sn_types = pars['typeList']
-            host_types = ['No Host'] + pars.get('galTypeList', [])
             age_binner = AgeBinning(pars['minAge'], pars['maxAge'], pars['ageBinSize'])
             age_bins = age_binner.age_labels()
         except Exception as e:
             # Fallback to mock data if model files are missing
             sn_types = ['Ia', 'Ib', 'Ic', 'II', 'IIn', 'IIb']
             age_bins = ['-10 to -5', '-5 to 0', '0 to 5', '5 to 10', '10 to 15']
-            host_types = ['No Host', 'E', 'S0', 'Sa', 'Sb', 'Sc', 'Sd', 'Irr']
         return jsonify({
             'sn_types': sn_types,
-            'age_bins': age_bins,
-            'host_types': host_types
+            'age_bins': age_bins
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -164,32 +160,36 @@ def get_analysis_options():
 def get_template_spectrum():
     sn_type = request.args.get('sn_type', 'Ia')
     age_bin = request.args.get('age_bin', '0 to 5')
-    host_type = request.args.get('host_type', 'No Host')
     try:
         import sys
         sys.path.insert(0, './astrodash')
         from astrodash.data.read_binned_templates import load_templates, get_templates, combined_sn_and_host_data
         import numpy as np
         import os
-        # Path to the .npz file (relative to backend root)
-        npz_path = os.path.join(os.path.dirname(__file__), '../../astrodash/astrodash/data/models_v06/models/sn_and_host_templates.npz')
-        snTemplates, galTemplates = load_templates(npz_path)
-        # Use a default nw, w0, w1 (should match Astrodash defaults)
-        nw = 1024
-        w0 = 3500
-        w1 = 10000
+
+        pars = get_training_parameters()
+        w0, w1, nw = pars['w0'], pars['w1'], pars['nw']
+
+        # Path to the .npz file
+        app_dir = os.path.dirname(os.path.abspath(__file__))
+        backend_root = os.path.join(app_dir, '..')
+        npz_path = os.path.join(backend_root, 'astrodash_models', 'sn_and_host_templates.npz')
+        snTemplates, _ = load_templates(npz_path)
+
         # Get the template info
-        snInfos, snNames, hostInfos, hostNames = get_templates(sn_type, age_bin, host_type, snTemplates, galTemplates, nw)
-        # Use the first sub-template (legacy GUI allows navigation, but we just use the first)
-        snCoeff = 1.0
-        galCoeff = 0.0 if host_type == 'No Host' else 1.0
-        wave, flux, minMaxIndex = combined_sn_and_host_data(snCoeff, galCoeff, 0, snInfos[0], hostInfos[0], w0, w1, nw)
+        snInfos, _, _, _ = get_templates(sn_type, age_bin, 'No Host', snTemplates, {}, nw)
+
+        if not snInfos:
+            return jsonify({'error': 'Template not found', 'wave': [], 'flux': []}), 404
+
+        # Use the first sub-template
+        wave, flux, _ = combined_sn_and_host_data(1.0, 0.0, 0, snInfos[0], None, w0, w1, nw)
+
         return jsonify({
             'wave': wave.tolist(),
             'flux': flux.tolist(),
             'sn_type': sn_type,
             'age_bin': age_bin,
-            'host_type': host_type
         })
     except Exception as e:
-        return jsonify({'error': str(e), 'wave': [], 'flux': [], 'sn_type': sn_type, 'age_bin': age_bin, 'host_type': host_type}), 404
+        return jsonify({'error': str(e), 'wave': [], 'flux': [], 'sn_type': sn_type, 'age_bin': age_bin}), 404
