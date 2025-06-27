@@ -45,7 +45,8 @@ export interface ProcessResponse {
 
 export interface AnalysisOptionsResponse {
   sn_types: string[];
-  age_bins: string[];
+  age_bins?: string[];
+  age_bins_by_type?: { [sn_type: string]: string[] };
 }
 
 export interface TemplateSpectrumResponse {
@@ -94,19 +95,6 @@ class Api {
     }
   }
 
-  async uploadFile(file: File): Promise<SpectrumData> {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const response = await axios.post(`${API_BASE_URL}/upload`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-
-    return response.data;
-  }
-
   async getOSCReferences(): Promise<string[]> {
     const response = await axios.get(`${API_BASE_URL}/api/osc-references`);
     if (response.data.status === 'success') {
@@ -122,7 +110,10 @@ class Api {
 
   async getTemplateSpectrum(snType: string, age: string): Promise<TemplateSpectrumResponse> {
     const response = await axios.get(`${API_BASE_URL}/api/template-spectrum`, {
-      params: { sn_type: snType, age_bin: age }
+      params: {
+        sn_type: snType,
+        age_bin: age
+      }
     });
     return response.data;
   }

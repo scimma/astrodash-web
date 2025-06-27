@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-# --- PyTorch Model Definition ---
+# PyTorch Model
 class AstroDashPyTorchNet(nn.Module):
     """A PyTorch implementation of the AstroDash CNN."""
     def __init__(self, n_types, im_width=32):
@@ -51,7 +51,7 @@ class AstroDashPyTorchNet(nn.Module):
         return F.softmax(x, dim=1)
 
 
-# --- Core AstroDash Logic (Modernized) ---
+# Core AstroDASH logic
 
 def get_training_parameters():
     """Load training parameters from the model directory"""
@@ -250,7 +250,7 @@ class BestTypesListSingleRedshift:
         self.best_types = []
         self.softmax_ordered = []
         for i in range(outputs.shape[0]):
-            # --- Slice the output to match the number of user-facing types (legacy AstroDash behavior) ---
+            # Slice the output to match the number of user-facing types
             softmax = outputs[i].numpy()[:len(self.type_names_list)]
             best_types, _, softmax_ordered = self.create_list(softmax)
             self.best_types.append(best_types)
@@ -262,7 +262,7 @@ class BestTypesListSingleRedshift:
         return best_types, idx, softmax[idx]
 
 
-# --- Functions to be used by other services ---
+# Functions to be used by other services
 
 def classification_split(classification_string):
     parts = classification_string.split(': ')
@@ -276,7 +276,7 @@ def combined_prob(best_match_list):
     prev_broad_type = prev_name[:2]
     ages_list = [int(v) for v in age.split(' to ')]
 
-    # This logic remains complex, preserving original behavior
+    # Maintaining complex logic from original codebase
     prob_possible, ages_list_possible = 0., []
     prob_possible2, ages_list_possible2 = 0., []
 
@@ -292,13 +292,11 @@ def combined_prob(best_match_list):
                 else:
                     prob_possible = float(prob)
                     ages_list_possible = [min_age, max_age]
-            # ... (rest of the complex logic is preserved but truncated for brevity)
         elif broad_type == prev_broad_type:
             if prob_possible == 0:
                 if i <= 1: best_name = broad_type
                 prob_total += float(prob)
                 ages_list.extend([min_age, max_age])
-            # ...
 
     # Simplified logic from original for combining probabilities
     if prob_total < prob_initial: prob_total = prob_initial
@@ -309,26 +307,75 @@ def combined_prob(best_match_list):
     return best_name, best_age, round(prob_total, 4), reliable_flag
 
 # Other placeholder functions if needed by other services for API compatibility
-def load_templates(template_filename): return {}, {}
 class RlapCalc:
     def __init__(self, *args, **kwargs): pass
     def rlap_label(self): return "N/A", False
+
 def get_median_redshift(*args, **kwargs): return 0.0, {}, "N/A", 0.0
-def read_osc_input(filename, template=False):
-    # This function implementation seems fine, keeping it.
-    osc_base_url = "https://api.astrocats.space/"
-    obj_name = filename.split('-')[1]
-    try:
-        response = urlopen(f"{osc_base_url}{obj_name}/spectra/time+data")
-        data = json.loads(response.read(), object_pairs_hook=OrderedDict)
-        spectrum_data = data[next(iter(data))]['spectra'][0][1]
-        wave, flux = np.array(spectrum_data).T.astype(float)
-        return wave, flux, 0.0 # Redshift needs to be fetched separately
-    except URLError as e:
-        raise RuntimeError(f"Could not fetch OSC spectrum for '{filename}': {e.reason if hasattr(e, 'reason') else e}")
-    except Exception as e:
-        raise RuntimeError(f"Unexpected error fetching OSC spectrum for '{filename}': {e}")
-catalogDict = {'osc': read_osc_input}
+
+# def read_osc_input(filename, template=False):
+#     # This function implementation seems fine, keeping it.
+#     osc_base_url = "https://api.astrocats.space/"
+#     obj_name = filename.split('-')[1]
+#     try:
+#         response = urlopen(f"{osc_base_url}{obj_name}/spectra/time+data")
+#         data = json.loads(response.read(), object_pairs_hook=OrderedDict)
+#         spectrum_data = data[next(iter(data))]['spectra'][0][1]
+#         wave, flux = np.array(spectrum_data).T.astype(float)
+#         return wave, flux, 0.0 # Redshift needs to be fetched separately
+#     except URLError as e:
+#         raise RuntimeError(f"Could not fetch OSC spectrum for '{filename}': {e.reason if hasattr(e, 'reason') else e}")
+#     except Exception as e:
+#         raise RuntimeError(f"Unexpected error fetching OSC spectrum for '{filename}': {e}")
+
+# catalogDict = {'osc': read_osc_input}
+
+def load_template_spectrum(sn_type, age_bin, npz_path, pars):
+    print(f'[load_template_spectrum] sn_type: {repr(sn_type)}')
+    print(f'[load_template_spectrum] age_bin: {repr(age_bin)}')
+    data = np.load(npz_path, allow_pickle=True)
+    snTemplates_raw = data['snTemplates'].item() if 'snTemplates' in data else data['arr_0'].item()
+    snTemplates = {str(k): v for k, v in snTemplates_raw.items()}
+    print(f'[load_template_spectrum] Type of snTemplates[sn_type]: {type(snTemplates[sn_type])}')
+    # Try to convert to dict if not already
+    if not isinstance(snTemplates[sn_type], dict):
+        snTemplates[sn_type] = dict(snTemplates[sn_type])
+    print(f'[load_template_spectrum] Keys: {list(snTemplates[sn_type].keys())}')
+    print(f'[load_template_spectrum] Requested age_bin: {repr(age_bin)}')
+    for k in snTemplates[sn_type].keys():
+        print(f'[load_template_spectrum] Key: {repr(k)}')
+    if age_bin not in snTemplates[sn_type].keys():
+        print(f'[load_template_spectrum] All keys: {list(snTemplates[sn_type].keys())}')
+        raise ValueError(f"Age bin '{age_bin}' not found for SN type '{sn_type}'.")
+    template = snTemplates[sn_type][age_bin]['snInfo'][0] # placeholder for now
+    print(f'[load_template_spectrum] template type: {type(template)}')
+    print(f'[load_template_spectrum] template keys: {list(template.keys()) if hasattr(template, "keys") else "not a dict"}')
+    wave = template[0]
+    flux = template[1]
+    return wave, flux
+
+def get_valid_sn_types_and_age_bins(npz_path):
+    """
+    Returns a dict of {sn_type: [age_bin, ...]} for all valid combinations in the .npz file.
+    """
+    data = np.load(npz_path, allow_pickle=True)
+    snTemplates = data['snTemplates'].item()
+    valid = {}
+    for sn_type, age_bins in snTemplates.items():
+        valid_bins = []
+        for age_bin, entry in age_bins.items():
+            snInfo = entry.get('snInfo', None)
+            if (
+                isinstance(snInfo, np.ndarray) and
+                snInfo.shape and
+                len(snInfo.shape) == 2 and
+                snInfo.shape[0] > 0 and
+                snInfo.shape[1] == 4
+            ):
+                valid_bins.append(age_bin)
+        if valid_bins:
+            valid[sn_type] = valid_bins
+    return valid
 
 __all__ = [
     'get_training_parameters', 'BestTypesListSingleRedshift', 'LoadInputSpectra',

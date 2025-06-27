@@ -1,0 +1,15 @@
+# FastAPI framework and server
+fastapi
+uvicorn[standard]
+python-multipart
+
+# Core application dependencies
+numpy==2.2.5
+pandas==2.2.3
+scikit-learn
+torch==2.7.1
+torchvision==0.22.1
+astropy==7.1.0
+PyYAML==6.0.2
+python-dotenv
+pyqtgraph==0.13.7

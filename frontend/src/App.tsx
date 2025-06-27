@@ -23,10 +23,24 @@ function App() {
       createTheme({
         palette: {
           mode,
-          // You can customize more palette properties here for light/dark mode
-          // For example:
-          // primary: { main: mode === 'light' ? '#1976d2' : '#90caf9' },
-          // secondary: { main: mode === 'light' ? '#dc004e' : '#f48fb1' },
+          primary: { main: mode === 'light' ? '#1976d2' : '#90caf9' },
+          secondary: { main: mode === 'light' ? '#dc004e' : '#f48fb1' },
+          background: {
+            default: mode === 'light' ? '#f5f5f5' : '#121212',
+            paper: mode === 'light' ? '#fff' : '#1e1e1e',
+          },
+        },
+        typography: {
+          fontFamily: 'Roboto, Arial, sans-serif',
+          h1: { fontSize: '2.5rem' },
+          h2: { fontSize: '2rem' },
+          h3: { fontSize: '1.75rem' },
+          h4: { fontSize: '1.5rem' },
+          h5: { fontSize: '1.25rem' },
+          h6: { fontSize: '1rem' },
+        },
+        shape: {
+          borderRadius: 8,
         },
       }),
     [mode],
@@ -35,7 +49,6 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline /> {/* CssBaseline handles baseline styles and adapts to theme.palette.mode */}
-      {/* The theme toggle button will be moved into SupernovaClassifier for specific placement */}
       <Router>
         <Routes>
           <Route path="/" element={<LandingPage />} />

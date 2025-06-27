@@ -10,7 +10,7 @@ cleanup() {
 # Set up trap for cleanup
 trap cleanup EXIT INT TERM
 
-# Kill any processes using ports 5000 and 5173
+# Kill any processes using ports 5000 and 3000
 echo "Checking for existing processes..."
 if lsof -ti:5000 > /dev/null; then
     echo "Killing process on port 5000..."
@@ -24,7 +24,7 @@ fi
 
 # Start backend server
 echo "Starting backend server..."
-cd backend && python run.py &
+cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 5000 &
 BACKEND_PID=$!
 
 # Wait for backend to be ready

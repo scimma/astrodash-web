@@ -1,0 +1,210 @@
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
+from typing import List, Optional
+import json
+import numpy as np
+import os
+from urllib.parse import unquote_plus
+import logging
+
+from .services.spectrum_processor import SpectrumProcessor
+from .services.ml_classifier import MLClassifier
+from .services.astrodash_backend import get_training_parameters, AgeBinning, load_template_spectrum, get_valid_sn_types_and_age_bins
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("backend.log"), # logs to a file
+    ]
+)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Astrodash API",
+    description="API for processing and classifying supernova spectra.",
+    version="1.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # or ["*"] for all origins (not recommended for production)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Service Instantiation
+spectrum_processor = SpectrumProcessor()
+ml_classifier = MLClassifier()
+
+@app.get("/")
+async def read_root():
+    """Root endpoint."""
+    return {
+        "message": "Welcome to Astrodash API",
+        "endpoints": {
+            "health": "/health",
+            "process": "/process",
+            "osc-references": "/api/osc-references",
+            "analysis-options": "/api/analysis-options",
+            "template-spectrum": "/api/template-spectrum"
+        }
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
+@app.get("/api/osc-references", summary="Get available OSC references")
+async def get_osc_references():
+    """
+    Get a list of available Open Supernova Catalog (OSC) references.
+    These are used as a source for supernova spectra data.
+    """
+    try:
+        available_refs = [
+            'osc-sn2002er-0',
+            'osc-sn2011fe-0',
+            'osc-sn2014J-0',
+            'osc-sn1998aq-0',
+            'osc-sn1999ee-0',
+            'osc-sn2005cf-0',
+            'osc-sn2007af-0',
+            'osc-sn2009ig-0',
+            'osc-sn2012cg-0',
+            'osc-sn2013dy-0',
+            'osc-sn2014dt-0',
+            'osc-sn2016coj-0',
+        ]
+        logger.info(f"Returning {len(available_refs)} OSC references.")
+        return {
+            'status': 'success',
+            'references': available_refs
+        }
+    except Exception as e:
+        logger.error(f"Error fetching OSC references: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/process")
+async def process_spectrum(
+    params: str = Form('{}'),
+    file: Optional[UploadFile] = File(None)
+):
+    # Get spectrum data
+    try:
+        logger.info("/process endpoint called")
+        parsed_params = json.loads(params) if params else {}
+        logger.debug(f"Parsed params: {parsed_params}")
+        spectrum_data = None
+        try:
+            if file:
+                logger.info(f"File uploaded: {file.filename}")
+                spectrum_data = spectrum_processor.read_file(file.file)
+            elif 'oscRef' in parsed_params:
+                osc_ref = parsed_params.get('oscRef')
+                logger.info(f"OSC reference: {osc_ref}")
+                if osc_ref:
+                    spectrum_data = spectrum_processor.read_file(osc_ref)
+        except RuntimeError as e:
+            logger.error(f"RuntimeError in spectrum reading: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
+        except Exception as e:
+            logger.error(f"Exception in spectrum reading: {e}", exc_info=True)
+            raise HTTPException(status_code=400, detail=f"Spectrum reading error: {e}")
+
+        if not spectrum_data:
+            logger.warning("No spectrum file or OSC reference provided.")
+            raise HTTPException(status_code=400, detail="No spectrum file or OSC reference provided")
+
+        # Preprocess spectrum
+        try:
+            processed_data = spectrum_processor.process(
+                x=spectrum_data['x'],
+                y=spectrum_data['y'],
+                smoothing=parsed_params.get('smoothing', 0),
+                known_z=parsed_params.get('knownZ', False),
+                z_value=parsed_params.get('zValue'),
+                min_wave=parsed_params.get('minWave'),
+                max_wave=parsed_params.get('maxWave'),
+                calculate_rlap=parsed_params.get('calculateRlap', False)
+            )
+            logger.info("Spectrum processed successfully.")
+        except Exception as e:
+            logger.error(f"Exception in preprocessing: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Preprocessing error: {e}")
+
+        # Classify spectrum
+        try:
+            classification_results = ml_classifier.classify(processed_data)
+            logger.info("Classification completed successfully.")
+        except Exception as e:
+            logger.error(f"Exception in classification: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Classification error: {e}")
+
+        logger.info("/process completed successfully")
+        return {
+            "spectrum": processed_data,
+            "classification": classification_results
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.critical(f"Unhandled exception in /process: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/analysis-options")
+async def get_analysis_options():
+    try:
+        logger.info("Requested analysis options")
+        backend_root = os.path.join(os.path.dirname(__file__), '..')
+        npz_path = os.path.join(backend_root, 'astrodash_models', 'sn_and_host_templates.npz')
+        valid = get_valid_sn_types_and_age_bins(npz_path)
+        logger.info(f"Analysis options returned {repr(valid)} SN types by and age bins")
+        return {
+            'sn_types': list(valid.keys()),
+            'age_bins_by_type': valid
+        }
+    except Exception as e:
+        logger.error("Fetching analysis options failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/template-spectrum")
+async def get_template_spectrum(sn_type: str = 'Ia', age_bin: str = '2 to 6'):
+    try:
+        sn_type_decoded = unquote_plus(sn_type)
+        age_bin_decoded = unquote_plus(age_bin)
+        logger.info(f"Requested sn_type: {repr(sn_type_decoded)}")
+        logger.info(f"Requested age_bin: {repr(age_bin_decoded)}")
+        pars = get_training_parameters()
+        backend_root = os.path.join(os.path.dirname(__file__), '..')
+        npz_path = os.path.join(backend_root, 'astrodash_models', 'sn_and_host_templates.npz')
+        wave, flux = load_template_spectrum(sn_type_decoded, age_bin_decoded, npz_path, pars)
+        logger.info(f"Template spectrum loaded for {sn_type_decoded} / {age_bin_decoded}")
+
+        # Preprocess template spectrum using the same function as user spectra
+        processed = spectrum_processor.process(
+            x=wave,
+            y=flux,
+            smoothing=0,
+            known_z=True,
+            z_value=0,
+            min_wave=None,
+            max_wave=None,
+            calculate_rlap=False
+        )
+
+        return {
+            'wave': processed['x'],
+            'flux': processed['y'],
+            'sn_type': sn_type_decoded,
+            'age_bin': age_bin_decoded,
+        }
+    except FileNotFoundError:
+        logger.error("Template data file not found.")
+        raise HTTPException(status_code=404, detail="Template data file not found.")
+    except Exception as e:
+        logger.error(f"Exception in get_template_spectrum: {e}", exc_info=True)
+        raise HTTPException(status_code=404, detail=str(e))

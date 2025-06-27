@@ -19,18 +19,41 @@ import {
   InputLabel,
   Snackbar,
   Alert,
+  Chip,
+  Stack,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
 import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend } from 'recharts';
 import { api, ProcessParams, ProcessResponse } from '../services/api';
 import { ResponsiveContainer } from 'recharts';
 
 interface SupernovaClassifierProps {
   toggleColorMode: () => void;
   currentMode: 'light' | 'dark';
+}
+
+// Template spectrum type with additional metadata
+type TemplateSpectrum = {
+  wave: number[];
+  flux: number[];
+  sn_type: string;
+  age_bin: string;
+  color?: string;
+  visible?: boolean;
+};
+
+// Template overlay configuration
+interface TemplateOverlay {
+  sn_type: string;
+  age_bin: string;
+  visible: boolean;
+  color: string;
+  spectrum: TemplateSpectrum | null;
 }
 
 const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMode, currentMode }) => {
@@ -72,13 +95,57 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   // Add state for template navigation
   const [currentMatchIndex, setCurrentMatchIndex] = useState<number>(0);
 
-  // Add state for template spectrum
-  type TemplateSpectrum = { wave: number[]; flux: number[]; sn_type: string; age_bin: string; };
-  const [templateSpectrum, setTemplateSpectrum] = useState<TemplateSpectrum | null>(null);
+  // Template overlay state
+  const [templateOverlays, setTemplateOverlays] = useState<TemplateOverlay[]>([]);
+  const [showTemplates, setShowTemplates] = useState<boolean>(false);
 
   // Add state for error handling
   const [error, setError] = useState<string | null>(null);
   const [errorOpen, setErrorOpen] = useState(false);
+
+  // Template colors for different overlays
+  const templateColors = [
+    '#d62728', '#ff7f0e', '#2ca02c', '#1f77b4', '#9467bd',
+    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+  ];
+
+  // Helper function to interpolate template data to match spectrum wavelengths
+  const interpolateTemplate = (template: TemplateSpectrum, spectrumWavelengths: number[]): (number | undefined)[] => {
+    if (!template || !template.wave || !template.flux || template.wave.length === 0) {
+      return new Array(spectrumWavelengths.length).fill(undefined);
+    }
+
+    const interpolated = spectrumWavelengths.map(wave => {
+      // Find the two closest template wavelengths
+      let lowerIdx = -1;
+      let upperIdx = -1;
+
+      for (let i = 0; i < template.wave.length; i++) {
+        if (template.wave[i] <= wave) {
+          lowerIdx = i;
+        } else {
+          upperIdx = i;
+          break;
+        }
+      }
+
+      // If wave is outside template range, return undefined
+      if (lowerIdx === -1 || upperIdx === -1) {
+        return undefined;
+      }
+
+      // Linear interpolation
+      const lowerWave = template.wave[lowerIdx];
+      const upperWave = template.wave[upperIdx];
+      const lowerFlux = template.flux[lowerIdx];
+      const upperFlux = template.flux[upperIdx];
+
+      const ratio = (wave - lowerWave) / (upperWave - lowerWave);
+      return lowerFlux + ratio * (upperFlux - lowerFlux);
+    });
+
+    return interpolated;
+  };
 
   // Add useEffect to log spectrumData changes
   useEffect(() => {
@@ -96,7 +163,20 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   useEffect(() => {
     api.getAnalysisOptions().then(res => {
       setSnTypeOptions(res.sn_types || []);
-      setAgeOptions(res.age_bins || []);
+      // Handle both old format (flat age_bins) and new format (age_bins_by_type)
+      if (res.age_bins_by_type) {
+        // New format: extract all unique age bins from all SN types
+        const allAgeBins = new Set<string>();
+        Object.values(res.age_bins_by_type).forEach((ageBins: any) => {
+          if (Array.isArray(ageBins)) {
+            ageBins.forEach(bin => allAgeBins.add(bin));
+          }
+        });
+        setAgeOptions(Array.from(allAgeBins).sort());
+      } else {
+        // Old format: flat list
+        setAgeOptions(res.age_bins || []);
+      }
     }).catch(error => {
       console.error("Failed to fetch analysis options:", error);
       setError("Failed to load classification data. Please try again later.");
@@ -123,16 +203,67 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     }
   }, [snType, age, bestMatches]);
 
-  // Fetch template spectrum when SN Type, Age, or Host changes
+  // Initialize template overlays from best matches
   useEffect(() => {
-    if (snType && age) {
-      api.getTemplateSpectrum(snType, age).then(res => {
-        setTemplateSpectrum(res);
-      }).catch(() => setTemplateSpectrum(null));
-    } else {
-      setTemplateSpectrum(null);
+    if (bestMatches.length > 0 && showTemplates) {
+      const newOverlays: TemplateOverlay[] = bestMatches.slice(0, 5).map((match, index) => ({
+        sn_type: match.type,
+        age_bin: match.age,
+        visible: index < 3, // Show first 3 by default
+        color: templateColors[index % templateColors.length],
+        spectrum: null
+      }));
+      setTemplateOverlays(newOverlays);
     }
-  }, [snType, age]);
+  }, [bestMatches, showTemplates]);
+
+  // Fetch template spectra for overlays
+  useEffect(() => {
+    if (showTemplates && templateOverlays.length > 0 && spectrumData) {
+      templateOverlays.forEach(async (overlay, index) => {
+        if (overlay.visible && !overlay.spectrum) {
+          try {
+            const templateData = await api.getTemplateSpectrum(overlay.sn_type, overlay.age_bin);
+            setTemplateOverlays(prev => prev.map((o, i) =>
+              i === index ? { ...o, spectrum: templateData } : o
+            ));
+          } catch (error) {
+            console.error(`Failed to fetch template for ${overlay.sn_type} ${overlay.age_bin}:`, error);
+          }
+        }
+      });
+    }
+  }, [templateOverlays, showTemplates, spectrumData]);
+
+  // Prepare chart data with template overlays
+  const getChartData = () => {
+    if (!spectrumData || !spectrumData.spectrum) return [];
+
+    const baseData = spectrumData.spectrum.x.map((x: number, i: number) => ({
+      x,
+      y: spectrumData.spectrum.y[i],
+    }));
+
+    if (!showTemplates || templateOverlays.length === 0) {
+      return baseData;
+    }
+
+    // Add template data to each point
+    return baseData.map(point => {
+      const templateData: any = { x: point.x, y: point.y };
+
+      templateOverlays.forEach((overlay, index) => {
+        if (overlay.visible && overlay.spectrum) {
+          const interpolatedFlux = interpolateTemplate(overlay.spectrum, [point.x])[0];
+          if (interpolatedFlux !== undefined) {
+            templateData[`template_${index}`] = interpolatedFlux;
+          }
+        }
+      });
+
+      return templateData;
+    });
+  };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -199,31 +330,20 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       if (isErrorResponse(response)) {
         setError(response.message || response.error || 'An unknown error occurred.');
         setErrorOpen(true);
-        setLoading(false);
         return;
       }
 
       setSpectrumData(response);
+      setBestMatches(response.classification.best_matches || []);
 
-      // Update best matches
-      setBestMatches(response.classification.best_matches);
+      // Clear template overlays when new spectrum is processed
+      setTemplateOverlays([]);
+      setShowTemplates(false);
 
-      // Update SN type and age from best match
-      if (response.classification.best_match) {
-        setSnType(response.classification.best_match.type);
-        setAge(response.classification.best_match.age);
-      }
-    } catch (error: any) {
-      // Try to extract error message from backend response
-      let msg = 'An error occurred while processing the spectrum.';
-      if (error.response && error.response.data) {
-        msg = error.response.data.message || error.response.data.error || msg;
-      } else if (error.message) {
-        msg = error.message;
-      }
-      setError(msg);
-      setErrorOpen(true);
+    } catch (error) {
       console.error('Error processing spectrum:', error);
+      setError('Failed to process spectrum. Please try again.');
+      setErrorOpen(true);
     } finally {
       setLoading(false);
     }
@@ -232,33 +352,53 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   const handleClear = () => {
     setSelectedFile(null);
     setFileName('Select SN File...');
+    setOscRef('');
     setSpectrumData(null);
     setBestMatches([]);
-    setSnType('');
-    setAge('');
+    setTemplateOverlays([]);
+    setShowTemplates(false);
     setError(null);
-    setErrorOpen(false);
   };
 
   const handleDownload = () => {
     if (!spectrumData) return;
 
-    const csvContent = "data:text/csv;charset=utf-8,"
-      + "Wavelength,Flux\n"
-      + spectrumData.spectrum.x.map((x: number, i: number) => `${x},${spectrumData.spectrum.y[i]}`).join("\n");
-
-    // Create a download link
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", "spectrum_data.csv");
-    document.body.appendChild(link);
+    const dataStr = JSON.stringify(spectrumData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'spectrum_analysis.json';
     link.click();
-    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const handleHelp = () => {
-    window.open('https://github.com/your-repo/astrodash-web/blob/main/README.md', '_blank');
+    // Implement help functionality
+    console.log('Help clicked');
+  };
+
+  const toggleTemplateVisibility = (index: number) => {
+    setTemplateOverlays(prev => prev.map((overlay, i) =>
+      i === index ? { ...overlay, visible: !overlay.visible } : overlay
+    ));
+  };
+
+  const addTemplateOverlay = () => {
+    if (snType && age) {
+      const newOverlay: TemplateOverlay = {
+        sn_type: snType,
+        age_bin: age,
+        visible: true,
+        color: templateColors[templateOverlays.length % templateColors.length],
+        spectrum: null
+      };
+      setTemplateOverlays(prev => [...prev, newOverlay]);
+    }
+  };
+
+  const removeTemplateOverlay = (index: number) => {
+    setTemplateOverlays(prev => prev.filter((_, i) => i !== index));
   };
 
   return (
@@ -498,6 +638,131 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                     </FormControl>
                   </Box>
                 </Box>
+
+                {/* Template Overlay Controls */}
+                {spectrumData && bestMatches.length > 0 && (
+                  <Box sx={{ mb: 3, p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                      <Typography variant="h6">Template Overlays</Typography>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={showTemplates}
+                            onChange={(e) => setShowTemplates(e.target.checked)}
+                          />
+                        }
+                        label="Show Templates"
+                      />
+                    </Box>
+
+                    {showTemplates && (
+                      <>
+                        <Box sx={{ mb: 2 }}>
+                          <Typography variant="body2" color="text.secondary" gutterBottom>
+                            Overlay template spectra from best matches or add custom templates:
+                          </Typography>
+
+                          {/* Best Match Templates */}
+                          {templateOverlays.length > 0 && (
+                            <Box sx={{ mb: 2 }}>
+                              <Typography variant="subtitle2" gutterBottom>
+                                Best Match Templates:
+                              </Typography>
+                              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                {templateOverlays.map((overlay, index) => (
+                                  <Chip
+                                    key={index}
+                                    label={`${overlay.sn_type} ${overlay.age_bin}`}
+                                    onDelete={() => removeTemplateOverlay(index)}
+                                    onClick={() => toggleTemplateVisibility(index)}
+                                    icon={overlay.visible ? <VisibilityIcon /> : <VisibilityOffIcon />}
+                                    sx={{
+                                      backgroundColor: overlay.visible ? overlay.color : '#f5f5f5',
+                                      color: overlay.visible ? 'white' : 'inherit',
+                                      '&:hover': {
+                                        backgroundColor: overlay.visible ? overlay.color : '#e0e0e0',
+                                      }
+                                    }}
+                                  />
+                                ))}
+                              </Stack>
+                            </Box>
+                          )}
+
+                          {/* Add Custom Template */}
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <FormControl size="small" sx={{ minWidth: 120 }}>
+                              <InputLabel>Add Template</InputLabel>
+                              <Select
+                                value=""
+                                onChange={(e) => {
+                                  const [type, age] = e.target.value.split('|');
+                                  setSnType(type);
+                                  setAge(age);
+                                }}
+                              >
+                                {snTypeOptions.map((type) =>
+                                  ageOptions.map((ageBin) => (
+                                    <MenuItem key={`${type}-${ageBin}`} value={`${type}|${ageBin}`}>
+                                      {type} - {ageBin}
+                                    </MenuItem>
+                                  ))
+                                )}
+                              </Select>
+                            </FormControl>
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              onClick={addTemplateOverlay}
+                              disabled={!snType || !age}
+                            >
+                              Add
+                            </Button>
+                          </Box>
+                        </Box>
+
+                        {/* Template Legend */}
+                        {templateOverlays.filter(o => o.visible).length > 0 && (
+                          <Box sx={{ mb: 2 }}>
+                            <Typography variant="subtitle2" gutterBottom>
+                              Visible Templates:
+                            </Typography>
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                              {templateOverlays
+                                .filter(overlay => overlay.visible)
+                                .map((overlay, index) => (
+                                  <Box
+                                    key={index}
+                                    sx={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 0.5,
+                                      p: 0.5,
+                                      border: `2px solid ${overlay.color}`,
+                                      borderRadius: 1,
+                                      backgroundColor: `${overlay.color}20`
+                                    }}
+                                  >
+                                    <Box
+                                      sx={{
+                                        width: 12,
+                                        height: 2,
+                                        backgroundColor: overlay.color
+                                      }}
+                                    />
+                                    <Typography variant="caption">
+                                      {overlay.sn_type} {overlay.age_bin}
+                                    </Typography>
+                                  </Box>
+                                ))}
+                            </Box>
+                          </Box>
+                        )}
+                      </>
+                    )}
+                  </Box>
+                )}
+
                 <Box>
                   {spectrumData && (
                     <div className="mt-8">
@@ -506,11 +771,7 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                         <ResponsiveContainer width="100%" height={400}>
                           <LineChart
                             key={spectrumData ? `spectrum-${spectrumData.spectrum.x[0]}` : 'no-spectrum'}
-                            data={spectrumData.spectrum.x.map((x: number, i: number) => ({
-                              x,
-                              y: spectrumData.spectrum.y[i],
-                              template: templateSpectrum && templateSpectrum.wave[i] === x ? templateSpectrum.flux[i] : undefined
-                            }))}
+                            data={getChartData()}
                             margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                           >
                             <CartesianGrid strokeDasharray="3 3" />
@@ -522,21 +783,30 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                               label={{ value: 'Flux', angle: -90, position: 'insideLeft' }}
                             />
                             <RechartsTooltip
-                              formatter={(value: number, name: string, props: any) => [`${props.payload.y.toFixed(6)}`, 'Flux']}
+                              formatter={(value: number, name: string, props: any) => {
+                                if (name.startsWith('Template')) {
+                                  return [`${value?.toFixed(6) || 'N/A'}`, name];
+                                }
+                                return [`${props.payload.y?.toFixed(6) || 'N/A'}`, 'Observed'];
+                              }}
                               labelFormatter={(label: number) => `Wavelength: ${label.toFixed(2)} Å`}
                             />
+                            <Legend />
                             <Line type="monotone" dataKey="y" stroke="#8884d8" dot={false} name="Observed" />
-                            {templateSpectrum && (
-                              <Line
-                                type="monotone"
-                                dataKey="template"
-                                stroke="#d62728"
-                                dot={false}
-                                name="Template"
-                                isAnimationActive={false}
-                                connectNulls
-                              />
-                            )}
+                            {templateOverlays.map((overlay, index) => (
+                              overlay.visible && overlay.spectrum && (
+                                <Line
+                                  key={`template-${index}`}
+                                  type="monotone"
+                                  dataKey={`template_${index}`}
+                                  stroke={overlay.color}
+                                  dot={false}
+                                  name={`Template ${overlay.sn_type} ${overlay.age_bin}`}
+                                  isAnimationActive={false}
+                                  connectNulls
+                                />
+                              )
+                            ))}
                           </LineChart>
                         </ResponsiveContainer>
                       </div>

@@ -4,17 +4,17 @@ from astropy.io import fits
 import pandas as pd
 import os
 import sys
+import json
+from collections import OrderedDict
+from urllib.request import urlopen, URLError
 from .astrodash_backend import (
-    get_training_parameters, load_templates,
-    AgeBinning, BestTypesListSingleRedshift, LoadInputSpectra, classification_split,
-    combined_prob, RlapCalc, get_median_redshift, catalogDict,
-    normalise_spectrum
+    get_training_parameters, AgeBinning, BestTypesListSingleRedshift, LoadInputSpectra,
+    classification_split, combined_prob, RlapCalc, get_median_redshift, normalise_spectrum
 )
 
 class SpectrumProcessor:
     def __init__(self):
         self.supported_formats = ['.fits', '.dat', '.txt', '.lnw']
-        # Don't load templates here as they may not exist
         self.pars = None
         try:
             self.pars = get_training_parameters()
@@ -25,7 +25,7 @@ class SpectrumProcessor:
         """Read spectrum data from various sources"""
         if isinstance(file_or_ref, str):
             if file_or_ref.startswith('osc-'):
-                wave, flux, redshift = catalogDict['osc'](file_or_ref)
+                wave, flux, redshift = self.read_osc_input(file_or_ref)
                 return {'x': wave, 'y': flux, 'redshift': redshift}
             else:
                 raise ValueError("Invalid file reference")
@@ -98,6 +98,9 @@ class SpectrumProcessor:
                 wavelength, flux = zip(*spectrum)
                 return {'x': list(wavelength), 'y': list(flux)}
             else:
+                # Always reset file pointer before reading
+                if hasattr(file, 'seek'):
+                    file.seek(0)
                 df = pd.read_csv(file, sep=None, engine='python', header=None)
                 if len(df.columns) >= 2:
                     wavelength = df.iloc[:, 0].to_numpy()
@@ -107,6 +110,20 @@ class SpectrumProcessor:
                     raise ValueError("Text file must contain at least two columns")
         except Exception as e:
             raise ValueError(f"Error reading text file: {str(e)}")
+
+    def read_osc_input(self, filename, template=False):
+        osc_base_url = "https://api.astrocats.space/"
+        obj_name = filename.split('-')[1]
+        try:
+            response = urlopen(f"{osc_base_url}{obj_name}/spectra/time+data")
+            data = json.loads(response.read(), object_pairs_hook=OrderedDict)
+            spectrum_data = data[next(iter(data))]['spectra'][0][1]
+            wave, flux = np.array(spectrum_data).T.astype(float)
+            return wave, flux, 0.0 # Redshift needs to be fetched separately
+        except URLError as e:
+            raise RuntimeError(f"Could not fetch OSC spectrum for '{filename}': {e.reason if hasattr(e, 'reason') else e}")
+        except Exception as e:
+            raise RuntimeError(f"Unexpected error fetching OSC spectrum for '{filename}': {e}")
 
     def process(self, x, y, smoothing, known_z, z_value, min_wave, max_wave, calculate_rlap):
         """Process spectrum data with given parameters using astrodash_backend logic"""
@@ -157,8 +174,7 @@ class SpectrumProcessor:
         if known_z:
             return float(z_value)
 
-        # For now, return a default redshift of 0.0
-        # In a full implementation, this would use template matching
+        # For now, default to 0
         return 0.0
 
     def _calculate_rlap_score(self, flux):
