@@ -30,11 +30,22 @@ class SpectrumProcessor:
             else:
                 raise ValueError("Invalid file reference")
         else:
-            filename = file_or_ref.filename.lower()
+            # Handle UploadFile or file-like object
+            filename = None
+            file_obj = file_or_ref
+            # If FastAPI UploadFile
+            if hasattr(file_or_ref, 'filename') and hasattr(file_or_ref, 'file'):
+                filename = file_or_ref.filename.lower()
+                file_obj = file_or_ref.file
+            elif hasattr(file_or_ref, 'name'):
+                filename = os.path.basename(file_or_ref.name).lower()
+            # If filename is still None, raise a clear error
+            if not filename:
+                raise ValueError("Could not determine filename or file type for uploaded file.")
             if filename.endswith('.fits'):
-                return self._read_fits(file_or_ref)
+                return self._read_fits(file_obj)
             elif filename.endswith(('.dat', '.txt', '.lnw')):
-                return self._read_text(file_or_ref)
+                return self._read_text(file_obj, filename)
             else:
                 raise ValueError(f"Unsupported file format. Supported formats: {', '.join(self.supported_formats)}")
 
@@ -59,13 +70,11 @@ class SpectrumProcessor:
         except Exception as e:
             raise ValueError(f"Error reading FITS file: {str(e)}")
 
-    def _read_text(self, file):
+    def _read_text(self, file, filename):
         """Read spectrum data from text file (.dat, .txt, .lnw)"""
         try:
-            filename = file.filename.lower() if hasattr(file, 'filename') else str(file)
             if filename.endswith('.lnw'):
                 # Robust SNID .lnw parser
-                import io
                 import re
                 # Read file content as text
                 if hasattr(file, 'read'):

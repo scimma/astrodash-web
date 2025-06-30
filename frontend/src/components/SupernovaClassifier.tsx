@@ -28,9 +28,10 @@ import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend } from 'recharts';
-import { api, ProcessParams, ProcessResponse } from '../services/api';
-import { ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ReferenceLine } from 'recharts';
+import { api, ProcessParams, ProcessResponse, LineListResponse } from '../services/api';
+import { ResponsiveContainer, Customized } from 'recharts';
+import AnalysisOptionPanel from './AnalysisOptionPanel';
 
 interface SupernovaClassifierProps {
   toggleColorMode: () => void;
@@ -55,6 +56,12 @@ interface TemplateOverlay {
   color: string;
   spectrum: TemplateSpectrum | null;
 }
+
+// Template colors for different overlays (move outside component to avoid useEffect dependency warning)
+const templateColors = [
+  '#d62728', '#ff7f0e', '#2ca02c', '#1f77b4', '#9467bd',
+  '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+];
 
 const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMode, currentMode }) => {
   // State for file selection
@@ -92,9 +99,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   const [snTypeOptions, setSnTypeOptions] = useState<string[]>([]);
   const [ageOptions, setAgeOptions] = useState<string[]>([]);
 
-  // Add state for template navigation
-  const [currentMatchIndex, setCurrentMatchIndex] = useState<number>(0);
-
   // Template overlay state
   const [templateOverlays, setTemplateOverlays] = useState<TemplateOverlay[]>([]);
   const [showTemplates, setShowTemplates] = useState<boolean>(false);
@@ -103,10 +107,15 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   const [error, setError] = useState<string | null>(null);
   const [errorOpen, setErrorOpen] = useState(false);
 
-  // Template colors for different overlays
-  const templateColors = [
-    '#d62728', '#ff7f0e', '#2ca02c', '#1f77b4', '#9467bd',
-    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
+  // State for line list (element/ion lines)
+  const [lineList, setLineList] = useState<LineListResponse>({});
+  const [visibleLines, setVisibleLines] = useState<string[]>([]);
+  const [showElementLines, setShowElementLines] = useState<boolean>(true);
+  const lineColors = [
+    '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
+    '#a65628', '#f781bf', '#999999', '#dede00', '#00ced1',
+    '#8b0000', '#4682b4', '#228b22', '#800080', '#ffa500',
+    '#b8860b', '#ff69b4', '#708090', '#bdb76b', '#20b2aa'
   ];
 
   // Helper function to interpolate template data to match spectrum wavelengths
@@ -193,11 +202,8 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
         (!age || m.age === age)
       );
       if (filtered.length > 0) {
-        // Randomly pick one
-        const idx = Math.floor(Math.random() * filtered.length);
-        setCurrentMatchIndex(idx);
-        setSnType(filtered[idx].type);
-        setAge(filtered[idx].age);
+        setSnType(filtered[0].type);
+        setAge(filtered[0].age);
         // Optionally update plot/analysis here
       }
     }
@@ -234,6 +240,23 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       });
     }
   }, [templateOverlays, showTemplates, spectrumData]);
+
+  // Fetch line list on mount
+  useEffect(() => {
+    api.getLineList().then((data) => {
+      setLineList(data);
+      setVisibleLines(Object.keys(data).slice(0, 5)); // Show first 5 by default
+    });
+  }, []);
+
+  // Toggle visibility of a line group
+  const toggleLineVisibility = (element: string) => {
+    setVisibleLines((prev) =>
+      prev.includes(element)
+        ? prev.filter((el) => el !== element)
+        : [...prev, element]
+    );
+  };
 
   // Prepare chart data with template overlays
   const getChartData = () => {
@@ -399,6 +422,74 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
 
   const removeTemplateOverlay = (index: number) => {
     setTemplateOverlays(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Compute the min/max for XAxis domain to include only the spectrum data
+  const getSpectrumDomain = () => {
+    if (spectrumData && spectrumData.spectrum && spectrumData.spectrum.x.length > 0) {
+      const min = Math.min(...spectrumData.spectrum.x);
+      const max = Math.max(...spectrumData.spectrum.x);
+      // Add a small buffer
+      const buffer = (max - min) * 0.01;
+      return [min - buffer, max + buffer];
+    }
+    return undefined;
+  };
+
+  // Get spectrum x range for filtering lines
+  const getSpectrumXRange = () => {
+    if (spectrumData && spectrumData.spectrum && spectrumData.spectrum.x.length > 0) {
+      const min = Math.min(...spectrumData.spectrum.x);
+      const max = Math.max(...spectrumData.spectrum.x);
+      return [min, max];
+    }
+    return [null, null];
+  };
+
+  // Custom legend for element/ion lines
+  const ElementLineLegend = ({ visibleLines, lineList, lineColors }: { visibleLines: string[], lineList: LineListResponse, lineColors: string[] }) => (
+    <div style={{ position: 'absolute', top: 10, left: 40, display: 'flex', flexDirection: 'row', gap: 16, pointerEvents: 'none', zIndex: 2 }}>
+      {visibleLines.map((element, idx) => (
+        <span key={element} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ width: 18, height: 6, background: lineColors[Object.keys(lineList).indexOf(element) % lineColors.length], display: 'inline-block', borderRadius: 2 }} />
+          <span style={{ fontSize: 12, color: '#333', background: 'rgba(255,255,255,0.8)', padding: '0 4px', borderRadius: 2 }}>{element}</span>
+        </span>
+      ))}
+    </div>
+  );
+
+  // Legend for visible element/ion lines and template overlays
+  const GraphLegend = () => {
+    const visibleElements = visibleLines.map((element) => ({
+      label: element,
+      color: lineColors[Object.keys(lineList).indexOf(element) % lineColors.length],
+      type: 'element',
+    }));
+    const visibleTemplates = templateOverlays
+      .filter((overlay) => overlay.visible && overlay.spectrum)
+      .map((overlay, idx) => ({
+        label: `${overlay.sn_type} ${overlay.age_bin}`,
+        color: overlay.color,
+        type: 'template',
+      }));
+    const items = [...visibleElements, ...visibleTemplates];
+    if (items.length === 0) return null;
+    return (
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 2, alignItems: 'center', justifyContent: 'center' }}>
+        {items.map((item, idx) => (
+          <Box key={item.label + item.color} sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.5, borderRadius: 1, background: '#f5f5f5', minWidth: 0 }}>
+            <Box sx={{ width: 18, height: 6, background: item.color, borderRadius: 2, mr: 1 }} />
+            <Typography variant="body2" sx={{ fontWeight: 500, color: '#333', whiteSpace: 'nowrap' }}>{item.label}</Typography>
+            {item.type === 'template' && (
+              <Typography variant="caption" sx={{ color: '#888', ml: 0.5 }}>(template)</Typography>
+            )}
+            {item.type === 'element' && (
+              <Typography variant="caption" sx={{ color: '#888', ml: 0.5 }}>(line)</Typography>
+            )}
+          </Box>
+        ))}
+      </Box>
+    );
   };
 
   return (
@@ -763,6 +854,44 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                   </Box>
                 )}
 
+                {/* Line List Legend (with show/hide checkbox) */}
+                {spectrumData && Object.keys(lineList).length > 0 && (
+                  <AnalysisOptionPanel title="Element/Ion Lines">
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, justifyContent: 'flex-end' }}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={showElementLines}
+                            onChange={(e) => setShowElementLines(e.target.checked)}
+                          />
+                        }
+                        label="Show Element/Ion Lines"
+                        sx={{ ml: 2 }}
+                      />
+                    </Box>
+                    {showElementLines && (
+                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                        {Object.keys(lineList).map((element, idx) => (
+                          <Chip
+                            key={element}
+                            label={element}
+                            onClick={() => toggleLineVisibility(element)}
+                            sx={{
+                              backgroundColor: visibleLines.includes(element) ? lineColors[idx % lineColors.length] : '#f5f5f5',
+                              color: visibleLines.includes(element) ? 'white' : 'inherit',
+                              border: visibleLines.includes(element) ? `2px solid ${lineColors[idx % lineColors.length]}` : '1px solid #ccc',
+                              fontWeight: visibleLines.includes(element) ? 700 : 400,
+                              cursor: 'pointer',
+                            }}
+                            variant={visibleLines.includes(element) ? 'filled' : 'outlined'}
+                          />
+                        ))}
+                      </Stack>
+                    )}
+                  </AnalysisOptionPanel>
+                )}
+
+                {/* Spectrum Plot Section */}
                 <Box>
                   {spectrumData && (
                     <div className="mt-8">
@@ -777,7 +906,9 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                             <CartesianGrid strokeDasharray="3 3" />
                             <XAxis
                               dataKey="x"
+                              type="number"
                               label={{ value: 'Wavelength (Å)', position: 'insideBottom', offset: -5 }}
+                              domain={getSpectrumDomain()}
                             />
                             <YAxis
                               label={{ value: 'Flux', angle: -90, position: 'insideLeft' }}
@@ -801,14 +932,14 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                                   dataKey={`template_${index}`}
                                   stroke={overlay.color}
                                   dot={false}
-                                  name={`Template ${overlay.sn_type} ${overlay.age_bin}`}
-                                  isAnimationActive={false}
-                                  connectNulls
+                                  name={`${overlay.sn_type} ${overlay.age_bin}`}
                                 />
                               )
                             ))}
                           </LineChart>
                         </ResponsiveContainer>
+                        {/* Dynamic legend for lines and templates */}
+                        <GraphLegend />
                       </div>
                     </div>
                   )}

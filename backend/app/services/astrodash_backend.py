@@ -313,43 +313,20 @@ class RlapCalc:
 
 def get_median_redshift(*args, **kwargs): return 0.0, {}, "N/A", 0.0
 
-# def read_osc_input(filename, template=False):
-#     # This function implementation seems fine, keeping it.
-#     osc_base_url = "https://api.astrocats.space/"
-#     obj_name = filename.split('-')[1]
-#     try:
-#         response = urlopen(f"{osc_base_url}{obj_name}/spectra/time+data")
-#         data = json.loads(response.read(), object_pairs_hook=OrderedDict)
-#         spectrum_data = data[next(iter(data))]['spectra'][0][1]
-#         wave, flux = np.array(spectrum_data).T.astype(float)
-#         return wave, flux, 0.0 # Redshift needs to be fetched separately
-#     except URLError as e:
-#         raise RuntimeError(f"Could not fetch OSC spectrum for '{filename}': {e.reason if hasattr(e, 'reason') else e}")
-#     except Exception as e:
-#         raise RuntimeError(f"Unexpected error fetching OSC spectrum for '{filename}': {e}")
-
-# catalogDict = {'osc': read_osc_input}
 
 def load_template_spectrum(sn_type, age_bin, npz_path, pars):
-    print(f'[load_template_spectrum] sn_type: {repr(sn_type)}')
-    print(f'[load_template_spectrum] age_bin: {repr(age_bin)}')
+
     data = np.load(npz_path, allow_pickle=True)
     snTemplates_raw = data['snTemplates'].item() if 'snTemplates' in data else data['arr_0'].item()
     snTemplates = {str(k): v for k, v in snTemplates_raw.items()}
-    print(f'[load_template_spectrum] Type of snTemplates[sn_type]: {type(snTemplates[sn_type])}')
     # Try to convert to dict if not already
     if not isinstance(snTemplates[sn_type], dict):
         snTemplates[sn_type] = dict(snTemplates[sn_type])
-    print(f'[load_template_spectrum] Keys: {list(snTemplates[sn_type].keys())}')
-    print(f'[load_template_spectrum] Requested age_bin: {repr(age_bin)}')
-    for k in snTemplates[sn_type].keys():
-        print(f'[load_template_spectrum] Key: {repr(k)}')
+
     if age_bin not in snTemplates[sn_type].keys():
-        print(f'[load_template_spectrum] All keys: {list(snTemplates[sn_type].keys())}')
         raise ValueError(f"Age bin '{age_bin}' not found for SN type '{sn_type}'.")
     template = snTemplates[sn_type][age_bin]['snInfo'][0] # placeholder for now
-    print(f'[load_template_spectrum] template type: {type(template)}')
-    print(f'[load_template_spectrum] template keys: {list(template.keys()) if hasattr(template, "keys") else "not a dict"}')
+
     wave = template[0]
     flux = template[1]
     return wave, flux

@@ -102,7 +102,7 @@ async def process_spectrum(
         try:
             if file:
                 logger.info(f"File uploaded: {file.filename}")
-                spectrum_data = spectrum_processor.read_file(file.file)
+                spectrum_data = spectrum_processor.read_file(file)
             elif 'oscRef' in parsed_params:
                 osc_ref = parsed_params.get('oscRef')
                 logger.info(f"OSC reference: {osc_ref}")
@@ -184,21 +184,10 @@ async def get_template_spectrum(sn_type: str = 'Ia', age_bin: str = '2 to 6'):
         wave, flux = load_template_spectrum(sn_type_decoded, age_bin_decoded, npz_path, pars)
         logger.info(f"Template spectrum loaded for {sn_type_decoded} / {age_bin_decoded}")
 
-        # Preprocess template spectrum using the same function as user spectra
-        processed = spectrum_processor.process(
-            x=wave,
-            y=flux,
-            smoothing=0,
-            known_z=True,
-            z_value=0,
-            min_wave=None,
-            max_wave=None,
-            calculate_rlap=False
-        )
-
+        # Return template spectrum as-is (no preprocessing)
         return {
-            'wave': processed['x'],
-            'flux': processed['y'],
+            'wave': list(wave),
+            'flux': list(flux),
             'sn_type': sn_type_decoded,
             'age_bin': age_bin_decoded,
         }
@@ -208,3 +197,28 @@ async def get_template_spectrum(sn_type: str = 'Ia', age_bin: str = '2 to 6'):
     except Exception as e:
         logger.error(f"Exception in get_template_spectrum: {e}", exc_info=True)
         raise HTTPException(status_code=404, detail=str(e))
+
+@app.get("/api/line-list")
+async def get_line_list():
+    """Return the element/ion line list for plotting vertical lines."""
+    try:
+        backend_root = os.path.join(os.path.dirname(__file__), '..')
+        line_list_path = os.path.join(backend_root, 'astrodash_models', 'sneLineList.txt')
+        line_dict = {}
+        raw_lines = []
+        with open(line_list_path, 'r') as f:
+            for line in f:
+                raw_lines.append(line.rstrip())
+                line = line.strip()
+                if not line or ':' not in line:
+                    continue
+                key, values = line.split(':', 1)
+                # Remove trailing commas and whitespace, split by comma
+                wavelengths = [float(w.strip()) for w in values.replace(',', ' ').split() if w.strip()]
+                line_dict[key.strip()] = wavelengths
+        logger.info(f"Raw sneLineList.txt lines: {raw_lines}")
+        logger.info(f"Parsed line_dict: {line_dict}")
+        return line_dict
+    except Exception as e:
+        logger.error(f"Error reading line list: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error reading line list: {e}")

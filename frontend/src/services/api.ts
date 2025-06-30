@@ -56,6 +56,10 @@ export interface TemplateSpectrumResponse {
   age_bin: string;
 }
 
+export interface LineListResponse {
+  [element: string]: number[];
+}
+
 class Api {
   async processSpectrum(params: ProcessParams): Promise<ProcessResponse> {
     console.log('API: Making request to /process with params:', params);
@@ -115,6 +119,11 @@ class Api {
         age_bin: age
       }
     });
+    return response.data;
+  }
+
+  async getLineList(): Promise<LineListResponse> {
+    const response = await axios.get(`${API_BASE_URL}/api/line-list`);
     return response.data;
   }
 }
