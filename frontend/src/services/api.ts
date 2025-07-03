@@ -126,6 +126,23 @@ class Api {
     const response = await axios.get(`${API_BASE_URL}/api/line-list`);
     return response.data;
   }
+
+  async batchProcess({ zipFile, params }: { zipFile: File; params: any }): Promise<any> {
+    const formData = new FormData();
+    formData.append('zip_file', zipFile);
+    formData.append('params', JSON.stringify(params));
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/batch-process`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('API: Error making batch-process request:', error);
+      throw error;
+    }
+  }
 }
 
 export const api = new Api();

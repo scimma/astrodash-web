@@ -1,0 +1,251 @@
+import React, { useState } from 'react';
+import { Box, Typography, Button, Paper, TextField, Slider, Checkbox, FormControlLabel, CircularProgress, Alert, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
+import { api } from '../services/api';
+
+// Helper to generate random stars
+const generateStars = (count: number) => {
+  return Array.from({ length: count }).map((_, i) => {
+    const size = Math.random() * 2 + 1;
+    const left = Math.random() * 100;
+    const top = Math.random() * 100;
+    const duration = 2 + Math.random() * 3;
+    const delay = Math.random() * 5;
+    return (
+      <div
+        key={i}
+        className="twinkle-star"
+        style={{
+          position: 'absolute',
+          left: `${left}%`,
+          top: `${top}%`,
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          background: 'white',
+          opacity: 0.8,
+          boxShadow: `0 0 ${size * 4}px 1px white`,
+          animation: `twinkle ${duration}s infinite`,
+          animationDelay: `${delay}s`,
+          pointerEvents: 'none',
+        }}
+      />
+    );
+  });
+};
+
+const BatchPage: React.FC = () => {
+  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [smoothing, setSmoothing] = useState<number>(0);
+  const [knownZ, setKnownZ] = useState<boolean>(false);
+  const [zValue, setZValue] = useState<string>('');
+  const [minWave, setMinWave] = useState<string>('3500');
+  const [maxWave, setMaxWave] = useState<string>('10000');
+  const [calculateRlap, setCalculateRlap] = useState<boolean>(false);
+  const [results, setResults] = useState<any>(null);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      setZipFile(event.target.files[0]);
+    }
+  };
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!zipFile) {
+      setError('Please select a zip file to upload.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    setResults(null);
+    try {
+      const params = {
+        smoothing,
+        knownZ,
+        zValue: knownZ ? parseFloat(zValue) : undefined,
+        minWave: parseInt(minWave),
+        maxWave: parseInt(maxWave),
+        calculateRlap,
+      };
+      const response = await api.batchProcess({ zipFile, params });
+      setResults(response);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Batch classification failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Box sx={{ minHeight: '100vh', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', pt: 6, overflow: 'hidden', background: 'linear-gradient(135deg, #0d1b2a 0%, #1b263b 100%)' }}>
+      {/* Twinkling stars background */}
+      <style>{`
+        @keyframes twinkle {
+          0%, 100% { opacity: 0.8; }
+          50% { opacity: 0.2; }
+        }
+        .twinkle-star {
+          z-index: 0;
+        }
+      `}</style>
+      <Box sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0, pointerEvents: 'none' }}>
+        {generateStars(80)}
+      </Box>
+      {/* Main content */}
+      <Box sx={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <Typography variant="h3" gutterBottom sx={{ color: 'white', textShadow: '0 2px 8px #000' }}>
+          Batch Classification
+        </Typography>
+        <Typography variant="body1" sx={{ mb: 4, color: 'white', textShadow: '0 1px 4px #000' }}>
+          Upload a zip file containing multiple spectra for batch classification.
+        </Typography>
+        <Paper sx={{ p: 4, mb: 4, width: '100%', maxWidth: 600, background: 'rgba(20, 30, 50, 0.95)', boxShadow: '0 8px 32px 0 rgba(0,0,0,0.25)' }}>
+          <form onSubmit={handleSubmit}>
+            <Box sx={{ mb: 2 }}>
+              <Button
+                variant="contained"
+                component="label"
+                fullWidth
+                sx={{ mb: 1 }}
+              >
+                {zipFile ? zipFile.name : 'Select Zip File'}
+                <input
+                  type="file"
+                  accept=".zip"
+                  hidden
+                  onChange={handleFileChange}
+                />
+              </Button>
+            </Box>
+            <Box sx={{ mb: 2 }}>
+              <Typography gutterBottom sx={{ color: 'white' }}>Smoothing</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <TextField
+                  size="small"
+                  value={smoothing}
+                  onChange={(e) => setSmoothing(Number(e.target.value))}
+                  sx={{ width: 60, mr: 2 }}
+                  type="number"
+                  inputProps={{ min: 0, max: 50 }}
+                />
+                <Slider
+                  value={typeof smoothing === 'number' ? smoothing : 0}
+                  onChange={(_event, newValue) => setSmoothing(newValue as number)}
+                  aria-labelledby="smooth-slider"
+                  valueLabelDisplay="auto"
+                  step={1}
+                  marks
+                  min={0}
+                  max={50}
+                  sx={{ flex: 1 }}
+                />
+              </Box>
+            </Box>
+            <Box sx={{ mb: 2 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={knownZ}
+                    onChange={(e) => setKnownZ(e.target.checked)}
+                    sx={{ color: 'white' }}
+                  />
+                }
+                label={<span style={{ color: 'white' }}>Known Redshift</span>}
+              />
+              {knownZ && (
+                <TextField
+                  size="small"
+                  value={zValue}
+                  onChange={(e) => setZValue(e.target.value)}
+                  label="Redshift Value"
+                  sx={{ ml: 2, width: 120 }}
+                  type="number"
+                />
+              )}
+            </Box>
+            <Box sx={{ mb: 2, display: 'flex', gap: 2 }}>
+              <TextField
+                size="small"
+                label="Min wave"
+                value={minWave}
+                onChange={(e) => setMinWave(e.target.value)}
+                type="number"
+                fullWidth
+              />
+              <TextField
+                size="small"
+                label="Max wave"
+                value={maxWave}
+                onChange={(e) => setMaxWave(e.target.value)}
+                type="number"
+                fullWidth
+              />
+            </Box>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={calculateRlap}
+                  onChange={(e) => setCalculateRlap(e.target.checked)}
+                  sx={{ color: 'white' }}
+                />
+              }
+              label={<span style={{ color: 'white' }}>Calculate rlap scores</span>}
+            />
+            <Box sx={{ mt: 3 }}>
+              <Button
+                variant="contained"
+                color="primary"
+                type="submit"
+                fullWidth
+                disabled={loading}
+                sx={{ py: 1.5 }}
+              >
+                {loading ? <CircularProgress size={24} color="inherit" /> : 'Run Batch Classification'}
+              </Button>
+            </Box>
+          </form>
+          {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+        </Paper>
+        {results && (
+          <Box sx={{ width: '90vw', maxWidth: 1200 }}>
+            <Typography variant="h5" gutterBottom sx={{ color: 'white', textShadow: '0 1px 4px #000' }}>Results</Typography>
+            <TableContainer component={Paper} sx={{ mb: 4, background: 'rgba(20, 30, 50, 0.97)' }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>File Name</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Status</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Best Match Type</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Best Match Age</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Probability</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Redshift</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {Object.entries(results).map(([fname, result]: any) => (
+                    <TableRow key={fname}>
+                      <TableCell sx={{ color: 'white' }}>{fname}</TableCell>
+                      <TableCell>
+                        {result.error ? (
+                          <Alert severity="error">{result.error}</Alert>
+                        ) : <span style={{ color: '#90ee90' }}>Success</span>}
+                      </TableCell>
+                      <TableCell sx={{ color: 'white' }}>{result.classification?.best_match?.type ?? '-'}</TableCell>
+                      <TableCell sx={{ color: 'white' }}>{result.classification?.best_match?.age ?? '-'}</TableCell>
+                      <TableCell sx={{ color: 'white' }}>{result.classification?.best_match?.probability?.toFixed(3) ?? '-'}</TableCell>
+                      <TableCell sx={{ color: 'white' }}>{result.classification?.best_match?.redshift ?? '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+};
+
+export default BatchPage;

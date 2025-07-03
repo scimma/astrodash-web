@@ -5,6 +5,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 
 import LandingPage from './components/LandingPage';
 import SupernovaClassifier from './components/SupernovaClassifier';
+import BatchPage from './components/BatchPage';
 
 function App() {
   const [mode, setMode] = useState<'light' | 'dark'>('light');
@@ -59,6 +60,7 @@ function App() {
               currentMode={mode}
             />}
           />
+          <Route path="/batch" element={<BatchPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>

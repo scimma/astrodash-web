@@ -33,9 +33,9 @@ import Brightness4Icon from '@mui/icons-material/Brightness4';
 import Brightness7Icon from '@mui/icons-material/Brightness7';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ReferenceLine } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ReferenceLine, Customized } from 'recharts';
 import { api, ProcessParams, ProcessResponse, LineListResponse } from '../services/api';
-import { ResponsiveContainer, Customized } from 'recharts';
+import { ResponsiveContainer, Customized as RechartsCustomized } from 'recharts';
 import AnalysisOptionPanel from './AnalysisOptionPanel';
 import CloseIcon from '@mui/icons-material/Close';
 
@@ -68,6 +68,21 @@ const templateColors = [
   '#d62728', '#ff7f0e', '#2ca02c', '#1f77b4', '#9467bd',
   '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf'
 ];
+
+// Canonical order of element/ion names, matching sneLineList.txt
+const elementOrder = [
+  'H_Balmer', 'H_Paschen', 'HeI', 'HeII', 'CII', 'CIII', 'CIV', 'NII', 'NIII', 'NIV', 'NV',
+  'OI', '[OI]', 'OII', '[OII]', '[OIII]', 'OV', 'OVI', 'NaI', 'MgI', 'MgII',
+  'SiII', 'SII', 'CaII', 'CaII [H&K]', 'CaII [IR-trip]', '[CaII]', 'FeII', 'FeIII', 'T1', 'T2'
+];
+
+// Add this type above the component definition (or near imports):
+type ChartContextProps = {
+  xAxisMap: any;
+  yAxisMap: any;
+  width: number;
+  height: number;
+};
 
 const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMode, currentMode }) => {
   // State for file selection
@@ -121,8 +136,10 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
     '#a65628', '#f781bf', '#999999', '#dede00', '#00ced1',
     '#8b0000', '#4682b4', '#228b22', '#800080', '#ffa500',
-    '#b8860b', '#ff69b4', '#708090', '#bdb76b', '#20b2aa'
-  ];
+    '#b8860b', '#ff69b4', '#708090', '#bdb76b', '#20b2aa',
+    '#e9967a', '#00fa9a', '#8a2be2', '#ff6347', '#4682b4',
+    '#ffd700', '#adff2f', '#dc143c', '#00bfff', '#9932cc', '#ff4500'
+  ]; // Extended to 31 for all elements
 
   // Add state for customizing plot
   const [customizeOpen, setCustomizeOpen] = useState(false);
@@ -461,12 +478,55 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     return [null, null];
   };
 
+  // Helper to get color for an element/ion by canonical order
+  const getElementColor = (element: string) => {
+    const idx = elementOrder.indexOf(element);
+    return lineColors[idx >= 0 ? idx % lineColors.length : 0];
+  };
+
+  // Helper to get a short label/abbreviation for an element/ion
+  const getElementShortLabel = (element: string) => {
+    // Customize as needed for clarity
+    if (element.startsWith('H_')) return 'H';
+    if (element.startsWith('HeI')) return 'He I';
+    if (element.startsWith('HeII')) return 'He II';
+    if (element.startsWith('CII')) return 'C II';
+    if (element.startsWith('CIII')) return 'C III';
+    if (element.startsWith('CIV')) return 'C IV';
+    if (element.startsWith('NII')) return 'N II';
+    if (element.startsWith('NIII')) return 'N III';
+    if (element.startsWith('NIV')) return 'N IV';
+    if (element.startsWith('NV')) return 'N V';
+    if (element.startsWith('OI')) return 'O I';
+    if (element.startsWith('[OI]')) return '[O I]';
+    if (element.startsWith('OII')) return 'O II';
+    if (element.startsWith('[OII]')) return '[O II]';
+    if (element.startsWith('[OIII]')) return '[O III]';
+    if (element.startsWith('OV')) return 'O V';
+    if (element.startsWith('OVI')) return 'O VI';
+    if (element.startsWith('NaI')) return 'Na I';
+    if (element.startsWith('MgI')) return 'Mg I';
+    if (element.startsWith('MgII')) return 'Mg II';
+    if (element.startsWith('SiII')) return 'Si II';
+    if (element.startsWith('SII')) return 'S II';
+    if (element.startsWith('CaII [H&K]')) return 'Ca II H&K';
+    if (element.startsWith('CaII [IR-trip]')) return 'Ca II IR';
+    if (element.startsWith('CaII')) return 'Ca II';
+    if (element.startsWith('[CaII]')) return '[Ca II]';
+    if (element.startsWith('FeII')) return 'Fe II';
+    if (element.startsWith('FeIII')) return 'Fe III';
+    if (element.startsWith('T1')) return 'T1';
+    if (element.startsWith('T2')) return 'T2';
+    // Fallback: first capital letter(s)
+    return element.replace(/[^A-Z]/g, '').slice(0, 3);
+  };
+
   // Custom legend for element/ion lines
-  const ElementLineLegend = ({ visibleLines, lineList, lineColors }: { visibleLines: string[], lineList: LineListResponse, lineColors: string[] }) => (
+  const ElementLineLegend = ({ visibleLines, lineList }: { visibleLines: string[], lineList: LineListResponse }) => (
     <div style={{ position: 'absolute', top: 10, left: 40, display: 'flex', flexDirection: 'row', gap: 16, pointerEvents: 'none', zIndex: 2 }}>
-      {visibleLines.map((element, idx) => (
+      {visibleLines.map((element) => (
         <span key={element} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ width: 18, height: 6, background: lineColors[Object.keys(lineList).indexOf(element) % lineColors.length], display: 'inline-block', borderRadius: 2 }} />
+          <span style={{ width: 18, height: 6, background: getElementColor(element), display: 'inline-block', borderRadius: 2 }} />
           <span style={{ fontSize: 12, color: '#333', background: 'rgba(255,255,255,0.8)', padding: '0 4px', borderRadius: 2 }}>{element}</span>
         </span>
       ))}
@@ -480,7 +540,7 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       items = items.concat(
         visibleLines.map((element) => ({
           label: element,
-          color: lineColors[Object.keys(lineList).indexOf(element) % lineColors.length],
+          color: getElementColor(element),
           type: 'element' as const,
         }))
       );
@@ -783,23 +843,56 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                                 />
                               )
                             ))}
-                            {/* Render vertical lines for element/ion lines if toggled on */}
                             {showElementLines && Object.keys(lineList).length > 0 && visibleLines.length > 0 && (() => {
                               const [minX, maxX] = getSpectrumXRange();
-                              return visibleLines.flatMap((element, idx) =>
+                              return visibleLines.flatMap((element) =>
                                 (lineList[element] || [])
                                   .filter((line) => minX !== null && maxX !== null && line >= minX && line <= maxX)
                                   .map((line, i) => (
                                     <ReferenceLine
                                       key={`line-${element}-${line}`}
                                       x={line}
-                                      stroke={lineColors[idx % lineColors.length]}
+                                      stroke={getElementColor(element)}
                                       strokeDasharray="3 3"
-                                      label={{ value: element, position: 'top', fontSize: 10, fill: lineColors[idx % lineColors.length] }}
                                     />
                                   ))
                               );
                             })()}
+                            {showElementLines && Object.keys(lineList).length > 0 && visibleLines.length > 0 && (
+                              <Customized
+                                component={(props: any) => {
+                                  const { xAxisMap, yAxisMap } = props;
+                                  const xAxis = xAxisMap[Object.keys(xAxisMap)[0]];
+                                  const yAxis = yAxisMap[Object.keys(yAxisMap)[0]];
+                                  if (!xAxis || !yAxis) return <g />;
+                                  const yTop = yAxis.y + 8;
+                                  const [minX, maxX] = getSpectrumXRange();
+                                  return (
+                                    <g>
+                                      {visibleLines.map((element) => {
+                                        const lines = (lineList[element] || []).filter((line) => minX !== null && maxX !== null && line >= minX && line <= maxX);
+                                        if (lines.length === 0) return null;
+                                        const xPx = xAxis.scale(lines[0]);
+                                        return (
+                                          <text
+                                            key={`label-${element}-${lines[0]}`}
+                                            x={xPx + 4}
+                                            y={yTop}
+                                            fontSize={11}
+                                            fill={getElementColor(element)}
+                                            fontWeight="bold"
+                                            textAnchor="start"
+                                            style={{ pointerEvents: 'none', userSelect: 'none' }}
+                                          >
+                                            {getElementShortLabel(element)}
+                                          </text>
+                                        );
+                                      })}
+                                    </g>
+                                  );
+                                }}
+                              />
+                            )}
                           </LineChart>
                         </ResponsiveContainer>
                         {/* Dynamic legend for lines and templates */}
@@ -965,15 +1058,15 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
             >
               {showElementLines && (
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  {Object.keys(lineList).map((element, idx) => (
+                  {Object.keys(lineList).map((element) => (
                     <Chip
                       key={element}
                       label={element}
                       onClick={() => toggleLineVisibility(element)}
                       sx={{
-                        backgroundColor: visibleLines.includes(element) ? lineColors[idx % lineColors.length] : '#f5f5f5',
+                        backgroundColor: visibleLines.includes(element) ? getElementColor(element) : '#f5f5f5',
                         color: visibleLines.includes(element) ? 'white' : 'inherit',
-                        border: visibleLines.includes(element) ? `2px solid ${lineColors[idx % lineColors.length]}` : '1px solid #ccc',
+                        border: visibleLines.includes(element) ? `2px solid ${getElementColor(element)}` : '1px solid #ccc',
                         fontWeight: visibleLines.includes(element) ? 700 : 400,
                         cursor: 'pointer',
                       }}

@@ -10,6 +10,9 @@ venv/
 # Ignore backend models and data
 backend/astrodash_models/*
 
+#Ignore testing files
+batch_upload.zip
+
 # Ignore OS files
 .DS_Store
 Thumbs.db

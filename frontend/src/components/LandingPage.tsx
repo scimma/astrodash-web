@@ -77,6 +77,9 @@ const LandingPage: React.FC = () => {
               display: 'flex',
               justifyContent: 'center',
               mt: 4,
+              gap: 2,
+              flexDirection: 'column',
+              alignItems: 'center',
             }}
           >
             <motion.div
@@ -101,6 +104,30 @@ const LandingPage: React.FC = () => {
                 }}
               >
                 Classify Supernovae
+              </Button>
+            </motion.div>
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              <Button
+                variant="outlined"
+                size="large"
+                onClick={() => navigate('/batch')}
+                sx={{
+                  color: 'white',
+                  borderColor: '#2196f3',
+                  fontSize: '1.2rem',
+                  padding: '12px 32px',
+                  borderRadius: '30px',
+                  mt: 2,
+                  '&:hover': {
+                    backgroundColor: '#1976d2',
+                    borderColor: '#1976d2',
+                  },
+                }}
+              >
+                Batch Classify
               </Button>
             </motion.div>
           </Box>

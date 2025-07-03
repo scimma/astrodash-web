@@ -6,6 +6,9 @@ import numpy as np
 import os
 from urllib.parse import unquote_plus
 import logging
+import zipfile
+import io
+import math
 
 from .services.spectrum_processor import SpectrumProcessor
 from .services.ml_classifier import MLClassifier
@@ -39,6 +42,18 @@ app.add_middleware(
 spectrum_processor = SpectrumProcessor()
 ml_classifier = MLClassifier()
 
+def sanitize_for_json(obj):
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    elif isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(v) for v in obj]
+    else:
+        return obj
+
 @app.get("/")
 async def read_root():
     """Root endpoint."""
@@ -49,7 +64,8 @@ async def read_root():
             "process": "/process",
             "osc-references": "/api/osc-references",
             "analysis-options": "/api/analysis-options",
-            "template-spectrum": "/api/template-spectrum"
+            "template-spectrum": "/api/template-spectrum",
+            "batch-process": "api/batch-process"
         }
     }
 
@@ -222,3 +238,74 @@ async def get_line_list():
     except Exception as e:
         logger.error(f"Error reading line list: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error reading line list: {e}")
+
+@app.post("/api/batch-process")
+async def batch_process(
+    params: str = Form('{}'),
+    zip_file: UploadFile = File(...)
+):
+    """
+    Accepts a .zip file containing multiple spectrum files, processes and classifies each, and returns results per file.
+    """
+    try:
+        logger.info("/api/batch-process endpoint called")
+        parsed_params = json.loads(params) if params else {}
+        results = {}
+        # Read the uploaded zip file into memory
+        zip_bytes = await zip_file.read()
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+            for fname in z.namelist():
+                info = z.getinfo(fname)
+                if info.is_dir():
+                    continue  # Skip directories
+                # Only process supported file types
+                if not fname.lower().endswith((".fits", ".dat", ".txt", ".lnw")):
+                    results[fname] = {"error": "Unsupported file type"}
+                    continue
+                try:
+                    with z.open(fname) as file_obj:
+                        # Prepare file-like object for SpectrumProcessor
+                        ext = fname.lower().split('.')[-1]
+                        if ext == 'fits':
+                            # FITS files: keep as BytesIO
+                            file_like = io.BytesIO(file_obj.read())
+                        else:
+                            # Text files: decode bytes to string, wrap in StringIO
+                            content = file_obj.read()
+                            try:
+                                text = content.decode('utf-8')
+                            except UnicodeDecodeError:
+                                text = content.decode('latin1')
+                            import io as _io
+                            file_like = _io.StringIO(text)
+                        # Emulate UploadFile interface for SpectrumProcessor
+                        class FakeUploadFile:
+                            def __init__(self, filename, file):
+                                self.filename = filename
+                                self.file = file
+                        fake_file = FakeUploadFile(fname, file_like)
+                        spectrum_data = spectrum_processor.read_file(fake_file)
+                        processed_data = spectrum_processor.process(
+                            x=spectrum_data['x'],
+                            y=spectrum_data['y'],
+                            smoothing=parsed_params.get('smoothing', 0),
+                            known_z=parsed_params.get('knownZ', False),
+                            z_value=parsed_params.get('zValue'),
+                            min_wave=parsed_params.get('minWave'),
+                            max_wave=parsed_params.get('maxWave'),
+                            calculate_rlap=parsed_params.get('calculateRlap', False)
+                        )
+                        classification_results = ml_classifier.classify(processed_data)
+                        results[fname] = {
+                            "spectrum": processed_data,
+                            "classification": classification_results
+                        }
+                except Exception as e:
+                    # Log first few lines of file for debugging if error occurs
+                    logger.error(f"Error processing {fname}: {e}", exc_info=True)
+                    results[fname] = {"error": str(e)}
+        logger.info("/api/batch-process completed")
+        return sanitize_for_json(results)
+    except Exception as e:
+        logger.critical(f"Unhandled exception in /api/batch-process: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
