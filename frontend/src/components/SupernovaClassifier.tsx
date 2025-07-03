@@ -21,6 +21,11 @@ import {
   Alert,
   Chip,
   Stack,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  IconButton as MuiIconButton
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -32,6 +37,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsToolti
 import { api, ProcessParams, ProcessResponse, LineListResponse } from '../services/api';
 import { ResponsiveContainer, Customized } from 'recharts';
 import AnalysisOptionPanel from './AnalysisOptionPanel';
+import CloseIcon from '@mui/icons-material/Close';
 
 interface SupernovaClassifierProps {
   toggleColorMode: () => void;
@@ -110,13 +116,16 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   // State for line list (element/ion lines)
   const [lineList, setLineList] = useState<LineListResponse>({});
   const [visibleLines, setVisibleLines] = useState<string[]>([]);
-  const [showElementLines, setShowElementLines] = useState<boolean>(true);
+  const [showElementLines, setShowElementLines] = useState<boolean>(false);
   const lineColors = [
     '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
     '#a65628', '#f781bf', '#999999', '#dede00', '#00ced1',
     '#8b0000', '#4682b4', '#228b22', '#800080', '#ffa500',
     '#b8860b', '#ff69b4', '#708090', '#bdb76b', '#20b2aa'
   ];
+
+  // Add state for customizing plot
+  const [customizeOpen, setCustomizeOpen] = useState(false);
 
   // Helper function to interpolate template data to match spectrum wavelengths
   const interpolateTemplate = (template: TemplateSpectrum, spectrumWavelengths: number[]): (number | undefined)[] => {
@@ -233,8 +242,14 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
             setTemplateOverlays(prev => prev.map((o, i) =>
               i === index ? { ...o, spectrum: templateData } : o
             ));
-          } catch (error) {
+          } catch (error: any) {
             console.error(`Failed to fetch template for ${overlay.sn_type} ${overlay.age_bin}:`, error);
+            setError(
+              `Template spectrum unavailable for ${overlay.sn_type} (${overlay.age_bin}). It has been removed from the overlays.`
+            );
+            setErrorOpen(true);
+            // Remove the unavailable overlay
+            setTemplateOverlays(prev => prev.filter((_, i) => i !== index));
           }
         }
       });
@@ -460,23 +475,31 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
 
   // Legend for visible element/ion lines and template overlays
   const GraphLegend = () => {
-    const visibleElements = visibleLines.map((element) => ({
-      label: element,
-      color: lineColors[Object.keys(lineList).indexOf(element) % lineColors.length],
-      type: 'element',
-    }));
-    const visibleTemplates = templateOverlays
-      .filter((overlay) => overlay.visible && overlay.spectrum)
-      .map((overlay, idx) => ({
-        label: `${overlay.sn_type} ${overlay.age_bin}`,
-        color: overlay.color,
-        type: 'template',
-      }));
-    const items = [...visibleElements, ...visibleTemplates];
+    let items: { label: string; color: string; type: 'element' | 'template' }[] = [];
+    if (showElementLines) {
+      items = items.concat(
+        visibleLines.map((element) => ({
+          label: element,
+          color: lineColors[Object.keys(lineList).indexOf(element) % lineColors.length],
+          type: 'element' as const,
+        }))
+      );
+    }
+    if (showTemplates) {
+      items = items.concat(
+        templateOverlays
+          .filter((overlay) => overlay.visible && overlay.spectrum)
+          .map((overlay) => ({
+            label: `${overlay.sn_type} ${overlay.age_bin}`,
+            color: overlay.color,
+            type: 'template' as const,
+          }))
+      );
+    }
     if (items.length === 0) return null;
     return (
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 2, alignItems: 'center', justifyContent: 'center' }}>
-        {items.map((item, idx) => (
+        {items.map((item) => (
           <Box key={item.label + item.color} sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.5, borderRadius: 1, background: '#f5f5f5', minWidth: 0 }}>
             <Box sx={{ width: 18, height: 6, background: item.color, borderRadius: 2, mr: 1 }} />
             <Typography variant="body2" sx={{ fontWeight: 500, color: '#333', whiteSpace: 'nowrap' }}>{item.label}</Typography>
@@ -697,199 +720,23 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
               <Paper sx={{ p: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                   <Typography variant="h6">Analyse selection</Typography>
-                  <Button
-                    variant="outlined"
-                    onClick={handleDownload}
-                    disabled={!spectrumData}
-                  >
-                    Save
-                  </Button>
-                </Box>
-                <Box sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <FormControl size="small" sx={{ minWidth: 120 }}>
-                      <InputLabel>SN Type</InputLabel>
-                      <Select value={snType} onChange={(e) => setSnType(e.target.value)}>
-                        {snTypeOptions.map((type) => (
-                          <MenuItem key={type} value={type}>
-                            {type}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                    <FormControl size="small" sx={{ minWidth: 120 }}>
-                      <InputLabel>Age</InputLabel>
-                      <Select value={age} onChange={(e) => setAge(e.target.value)}>
-                        {ageOptions.map((ageBin) => (
-                          <MenuItem key={ageBin} value={ageBin}>
-                            {ageBin}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      onClick={() => setCustomizeOpen(true)}
+                      disabled={!spectrumData}
+                    >
+                      Customize Plot
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={handleDownload}
+                      disabled={!spectrumData}
+                    >
+                      Save
+                    </Button>
                   </Box>
                 </Box>
-
-                {/* Template Overlay Controls */}
-                {spectrumData && bestMatches.length > 0 && (
-                  <Box sx={{ mb: 3, p: 2, border: '1px solid #e0e0e0', borderRadius: 1 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Typography variant="h6">Template Overlays</Typography>
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={showTemplates}
-                            onChange={(e) => setShowTemplates(e.target.checked)}
-                          />
-                        }
-                        label="Show Templates"
-                      />
-                    </Box>
-
-                    {showTemplates && (
-                      <>
-                        <Box sx={{ mb: 2 }}>
-                          <Typography variant="body2" color="text.secondary" gutterBottom>
-                            Overlay template spectra from best matches or add custom templates:
-                          </Typography>
-
-                          {/* Best Match Templates */}
-                          {templateOverlays.length > 0 && (
-                            <Box sx={{ mb: 2 }}>
-                              <Typography variant="subtitle2" gutterBottom>
-                                Best Match Templates:
-                              </Typography>
-                              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                                {templateOverlays.map((overlay, index) => (
-                                  <Chip
-                                    key={index}
-                                    label={`${overlay.sn_type} ${overlay.age_bin}`}
-                                    onDelete={() => removeTemplateOverlay(index)}
-                                    onClick={() => toggleTemplateVisibility(index)}
-                                    icon={overlay.visible ? <VisibilityIcon /> : <VisibilityOffIcon />}
-                                    sx={{
-                                      backgroundColor: overlay.visible ? overlay.color : '#f5f5f5',
-                                      color: overlay.visible ? 'white' : 'inherit',
-                                      '&:hover': {
-                                        backgroundColor: overlay.visible ? overlay.color : '#e0e0e0',
-                                      }
-                                    }}
-                                  />
-                                ))}
-                              </Stack>
-                            </Box>
-                          )}
-
-                          {/* Add Custom Template */}
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <FormControl size="small" sx={{ minWidth: 120 }}>
-                              <InputLabel>Add Template</InputLabel>
-                              <Select
-                                value=""
-                                onChange={(e) => {
-                                  const [type, age] = e.target.value.split('|');
-                                  setSnType(type);
-                                  setAge(age);
-                                }}
-                              >
-                                {snTypeOptions.map((type) =>
-                                  ageOptions.map((ageBin) => (
-                                    <MenuItem key={`${type}-${ageBin}`} value={`${type}|${ageBin}`}>
-                                      {type} - {ageBin}
-                                    </MenuItem>
-                                  ))
-                                )}
-                              </Select>
-                            </FormControl>
-                            <Button
-                              variant="outlined"
-                              size="small"
-                              onClick={addTemplateOverlay}
-                              disabled={!snType || !age}
-                            >
-                              Add
-                            </Button>
-                          </Box>
-                        </Box>
-
-                        {/* Template Legend */}
-                        {templateOverlays.filter(o => o.visible).length > 0 && (
-                          <Box sx={{ mb: 2 }}>
-                            <Typography variant="subtitle2" gutterBottom>
-                              Visible Templates:
-                            </Typography>
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                              {templateOverlays
-                                .filter(overlay => overlay.visible)
-                                .map((overlay, index) => (
-                                  <Box
-                                    key={index}
-                                    sx={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 0.5,
-                                      p: 0.5,
-                                      border: `2px solid ${overlay.color}`,
-                                      borderRadius: 1,
-                                      backgroundColor: `${overlay.color}20`
-                                    }}
-                                  >
-                                    <Box
-                                      sx={{
-                                        width: 12,
-                                        height: 2,
-                                        backgroundColor: overlay.color
-                                      }}
-                                    />
-                                    <Typography variant="caption">
-                                      {overlay.sn_type} {overlay.age_bin}
-                                    </Typography>
-                                  </Box>
-                                ))}
-                            </Box>
-                          </Box>
-                        )}
-                      </>
-                    )}
-                  </Box>
-                )}
-
-                {/* Line List Legend (with show/hide checkbox) */}
-                {spectrumData && Object.keys(lineList).length > 0 && (
-                  <AnalysisOptionPanel title="Element/Ion Lines">
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, justifyContent: 'flex-end' }}>
-                      <FormControlLabel
-                        control={
-                          <Checkbox
-                            checked={showElementLines}
-                            onChange={(e) => setShowElementLines(e.target.checked)}
-                          />
-                        }
-                        label="Show Element/Ion Lines"
-                        sx={{ ml: 2 }}
-                      />
-                    </Box>
-                    {showElementLines && (
-                      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                        {Object.keys(lineList).map((element, idx) => (
-                          <Chip
-                            key={element}
-                            label={element}
-                            onClick={() => toggleLineVisibility(element)}
-                            sx={{
-                              backgroundColor: visibleLines.includes(element) ? lineColors[idx % lineColors.length] : '#f5f5f5',
-                              color: visibleLines.includes(element) ? 'white' : 'inherit',
-                              border: visibleLines.includes(element) ? `2px solid ${lineColors[idx % lineColors.length]}` : '1px solid #ccc',
-                              fontWeight: visibleLines.includes(element) ? 700 : 400,
-                              cursor: 'pointer',
-                            }}
-                            variant={visibleLines.includes(element) ? 'filled' : 'outlined'}
-                          />
-                        ))}
-                      </Stack>
-                    )}
-                  </AnalysisOptionPanel>
-                )}
 
                 {/* Spectrum Plot Section */}
                 <Box>
@@ -936,6 +783,23 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                                 />
                               )
                             ))}
+                            {/* Render vertical lines for element/ion lines if toggled on */}
+                            {showElementLines && Object.keys(lineList).length > 0 && visibleLines.length > 0 && (() => {
+                              const [minX, maxX] = getSpectrumXRange();
+                              return visibleLines.flatMap((element, idx) =>
+                                (lineList[element] || [])
+                                  .filter((line) => minX !== null && maxX !== null && line >= minX && line <= maxX)
+                                  .map((line, i) => (
+                                    <ReferenceLine
+                                      key={`line-${element}-${line}`}
+                                      x={line}
+                                      stroke={lineColors[idx % lineColors.length]}
+                                      strokeDasharray="3 3"
+                                      label={{ value: element, position: 'top', fontSize: 10, fill: lineColors[idx % lineColors.length] }}
+                                    />
+                                  ))
+                              );
+                            })()}
                           </LineChart>
                         </ResponsiveContainer>
                         {/* Dynamic legend for lines and templates */}
@@ -949,6 +813,184 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
           </Grid>
         </Grid>
       </Grid>
+
+      {/* Add the Dialog for customizing plot options */}
+      <Dialog open={customizeOpen} onClose={() => setCustomizeOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ m: 0, p: 2 }}>
+          Customize Plot
+          <MuiIconButton
+            aria-label="close"
+            onClick={() => setCustomizeOpen(false)}
+            sx={{ position: 'absolute', right: 8, top: 8, color: (theme) => theme.palette.grey[500] }}
+          >
+            <CloseIcon />
+          </MuiIconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {spectrumData && bestMatches.length > 0 && (
+            <AnalysisOptionPanel
+              title="Template Overlays"
+              controlRow={
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={showTemplates}
+                      onChange={(e) => setShowTemplates(e.target.checked)}
+                    />
+                  }
+                  label="Show Templates"
+                />
+              }
+            >
+              {showTemplates && (
+                <>
+                  <Box sx={{ mb: 2 }}>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>
+                      Overlay template spectra from best matches or add custom templates:
+                    </Typography>
+                    {/* Best Match Templates */}
+                    {templateOverlays.length > 0 && (
+                      <Box sx={{ mb: 2 }}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          Best Match Templates:
+                        </Typography>
+                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                          {templateOverlays.map((overlay, index) => (
+                            <Chip
+                              key={index}
+                              label={`${overlay.sn_type} ${overlay.age_bin}`}
+                              onDelete={() => removeTemplateOverlay(index)}
+                              onClick={() => toggleTemplateVisibility(index)}
+                              icon={overlay.visible ? <VisibilityIcon /> : <VisibilityOffIcon />}
+                              sx={{
+                                backgroundColor: overlay.visible ? overlay.color : '#f5f5f5',
+                                color: overlay.visible ? 'white' : 'inherit',
+                                '&:hover': {
+                                  backgroundColor: overlay.visible ? overlay.color : '#e0e0e0',
+                                }
+                              }}
+                            />
+                          ))}
+                        </Stack>
+                      </Box>
+                    )}
+                    {/* Add Custom Template */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <FormControl size="small" sx={{ minWidth: 120 }}>
+                        <InputLabel>SN Type</InputLabel>
+                        <Select value={snType} onChange={(e) => setSnType(e.target.value)}>
+                          {snTypeOptions.map((type) => (
+                            <MenuItem key={type} value={type}>
+                              {type}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      <FormControl size="small" sx={{ minWidth: 120 }}>
+                        <InputLabel>Age</InputLabel>
+                        <Select value={age} onChange={(e) => setAge(e.target.value)}>
+                          {ageOptions.map((ageBin) => (
+                            <MenuItem key={ageBin} value={ageBin}>
+                              {ageBin}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={addTemplateOverlay}
+                        disabled={!snType || !age}
+                      >
+                        Add
+                      </Button>
+                    </Box>
+                  </Box>
+                  {/* Template Legend */}
+                  {templateOverlays.filter(o => o.visible).length > 0 && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        Visible Templates:
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {templateOverlays
+                          .filter(overlay => overlay.visible)
+                          .map((overlay, index) => (
+                            <Box
+                              key={index}
+                              sx={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 0.5,
+                                p: 0.5,
+                                border: `2px solid ${overlay.color}`,
+                                borderRadius: 1,
+                                backgroundColor: `${overlay.color}20`
+                              }}
+                            >
+                              <Box
+                                sx={{
+                                  width: 12,
+                                  height: 2,
+                                  backgroundColor: overlay.color
+                                }}
+                              />
+                              <Typography variant="caption">
+                                {overlay.sn_type} {overlay.age_bin}
+                              </Typography>
+                            </Box>
+                          ))}
+                      </Box>
+                    </Box>
+                  )}
+                </>
+              )}
+            </AnalysisOptionPanel>
+          )}
+          {spectrumData && Object.keys(lineList).length > 0 && (
+            <AnalysisOptionPanel
+              title="Element/Ion Lines"
+              controlRow={
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={showElementLines}
+                      onChange={(e) => setShowElementLines(e.target.checked)}
+                    />
+                  }
+                  label="Show Element/Ion Lines"
+                  sx={{ ml: 2 }}
+                />
+              }
+            >
+              {showElementLines && (
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  {Object.keys(lineList).map((element, idx) => (
+                    <Chip
+                      key={element}
+                      label={element}
+                      onClick={() => toggleLineVisibility(element)}
+                      sx={{
+                        backgroundColor: visibleLines.includes(element) ? lineColors[idx % lineColors.length] : '#f5f5f5',
+                        color: visibleLines.includes(element) ? 'white' : 'inherit',
+                        border: visibleLines.includes(element) ? `2px solid ${lineColors[idx % lineColors.length]}` : '1px solid #ccc',
+                        fontWeight: visibleLines.includes(element) ? 700 : 400,
+                        cursor: 'pointer',
+                      }}
+                      variant={visibleLines.includes(element) ? 'filled' : 'outlined'}
+                    />
+                  ))}
+                </Stack>
+              )}
+            </AnalysisOptionPanel>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCustomizeOpen(false)} color="primary">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Container>
   );
 };

@@ -315,7 +315,6 @@ def get_median_redshift(*args, **kwargs): return 0.0, {}, "N/A", 0.0
 
 
 def load_template_spectrum(sn_type, age_bin, npz_path, pars):
-
     data = np.load(npz_path, allow_pickle=True)
     snTemplates_raw = data['snTemplates'].item() if 'snTemplates' in data else data['arr_0'].item()
     snTemplates = {str(k): v for k, v in snTemplates_raw.items()}
@@ -325,7 +324,10 @@ def load_template_spectrum(sn_type, age_bin, npz_path, pars):
 
     if age_bin not in snTemplates[sn_type].keys():
         raise ValueError(f"Age bin '{age_bin}' not found for SN type '{sn_type}'.")
-    template = snTemplates[sn_type][age_bin]['snInfo'][0] # placeholder for now
+    snInfo = snTemplates[sn_type][age_bin].get('snInfo', None)
+    if not isinstance(snInfo, np.ndarray) or snInfo.shape[0] == 0:
+        raise ValueError(f"No template spectrum available for SN type '{sn_type}' and age bin '{age_bin}'.")
+    template = snInfo[0]  # placeholder for now
 
     wave = template[0]
     flux = template[1]
