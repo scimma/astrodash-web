@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Box, Typography, Button, Paper, TextField, Slider, Checkbox, FormControlLabel, CircularProgress, Alert, Table, TableBody, TableCell, TableContainer, TableHead, TableRow } from '@mui/material';
+import { Box, Typography, Button, Paper, TextField, Slider, Checkbox, FormControlLabel, CircularProgress, Alert, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton } from '@mui/material';
+import { Delete as DeleteIcon } from '@mui/icons-material';
 import { api } from '../services/api';
 
 // Helper to generate random stars
@@ -34,7 +35,7 @@ const generateStars = (count: number) => {
 };
 
 const BatchPage: React.FC = () => {
-  const [zipFile, setZipFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [smoothing, setSmoothing] = useState<number>(0);
   const [knownZ, setKnownZ] = useState<boolean>(false);
   const [zValue, setZValue] = useState<string>('');
@@ -46,15 +47,20 @@ const BatchPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      setZipFile(event.target.files[0]);
+    if (event.target.files) {
+      const newFiles = Array.from(event.target.files);
+      setFiles(prevFiles => [...prevFiles, ...newFiles]);
     }
+  };
+
+  const removeFile = (index: number) => {
+    setFiles(prevFiles => prevFiles.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!zipFile) {
-      setError('Please select a zip file to upload.');
+    if (files.length === 0) {
+      setError('Please select at least one file to upload.');
       return;
     }
     setLoading(true);
@@ -69,8 +75,19 @@ const BatchPage: React.FC = () => {
         maxWave: parseInt(maxWave),
         calculateRlap,
       };
-      const response = await api.batchProcess({ zipFile, params });
-      setResults(response);
+
+      // Check if we have a zip file
+      const zipFile = files.find(file => file.name.toLowerCase().endsWith('.zip'));
+
+      if (zipFile && files.length === 1) {
+        // Single zip file - use the original zip endpoint
+        const response = await api.batchProcess({ zipFile, params });
+        setResults(response);
+      } else {
+        // Multiple files or individual files - use the multiple files endpoint
+        const response = await api.batchProcessMultiple({ files, params });
+        setResults(response);
+      }
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Batch classification failed.');
     } finally {
@@ -99,7 +116,7 @@ const BatchPage: React.FC = () => {
           Batch Classification
         </Typography>
         <Typography variant="body1" sx={{ mb: 4, color: 'white', textShadow: '0 1px 4px #000' }}>
-          Upload a zip file containing multiple spectra for batch classification.
+          Upload multiple individual files or a zip file containing spectra for batch classification.
         </Typography>
         <Paper sx={{ p: 4, mb: 4, width: '100%', maxWidth: 600, background: 'rgba(20, 30, 50, 0.95)', boxShadow: '0 8px 32px 0 rgba(0,0,0,0.25)' }}>
           <form onSubmit={handleSubmit}>
@@ -110,14 +127,39 @@ const BatchPage: React.FC = () => {
                 fullWidth
                 sx={{ mb: 1 }}
               >
-                {zipFile ? zipFile.name : 'Select Zip File'}
+                Add Files
                 <input
                   type="file"
-                  accept=".zip"
+                  accept=".fits,.txt,.dat,.csv,.zip"
+                  multiple
                   hidden
                   onChange={handleFileChange}
                 />
               </Button>
+              {files.length > 0 && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography variant="subtitle2" sx={{ color: 'white', mb: 1 }}>
+                    Selected Files ({files.length}):
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                    {files.map((file, index) => (
+                      <Chip
+                        key={index}
+                        label={file.name}
+                        onDelete={() => removeFile(index)}
+                        deleteIcon={<DeleteIcon />}
+                        sx={{
+                          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                          color: 'white',
+                          '& .MuiChip-deleteIcon': {
+                            color: 'white'
+                          }
+                        }}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              )}
             </Box>
             <Box sx={{ mb: 2 }}>
               <Typography gutterBottom sx={{ color: 'white' }}>Smoothing</Typography>
@@ -126,9 +168,17 @@ const BatchPage: React.FC = () => {
                   size="small"
                   value={smoothing}
                   onChange={(e) => setSmoothing(Number(e.target.value))}
-                  sx={{ width: 60, mr: 2 }}
+                  sx={{ width: 60, mr: 2,
+                    '& .MuiInputBase-input': { color: 'white' },
+                    '& .MuiOutlinedInput-root': {
+                      '& fieldset': { borderColor: 'white' },
+                      '&:hover fieldset': { borderColor: 'white' },
+                      '&.Mui-focused fieldset': { borderColor: 'white' },
+                    },
+                  }}
                   type="number"
                   inputProps={{ min: 0, max: 50 }}
+                  InputLabelProps={{ style: { color: 'white' } }}
                 />
                 <Slider
                   value={typeof smoothing === 'number' ? smoothing : 0}
@@ -160,8 +210,16 @@ const BatchPage: React.FC = () => {
                   value={zValue}
                   onChange={(e) => setZValue(e.target.value)}
                   label="Redshift Value"
-                  sx={{ ml: 2, width: 120 }}
+                  sx={{ ml: 2, width: 120,
+                    '& .MuiInputBase-input': { color: 'white' },
+                    '& .MuiOutlinedInput-root': {
+                      '& fieldset': { borderColor: 'white' },
+                      '&:hover fieldset': { borderColor: 'white' },
+                      '&.Mui-focused fieldset': { borderColor: 'white' },
+                    },
+                  }}
                   type="number"
+                  InputLabelProps={{ style: { color: 'white' } }}
                 />
               )}
             </Box>
@@ -173,6 +231,15 @@ const BatchPage: React.FC = () => {
                 onChange={(e) => setMinWave(e.target.value)}
                 type="number"
                 fullWidth
+                sx={{
+                  '& .MuiInputBase-input': { color: 'white' },
+                  '& .MuiOutlinedInput-root': {
+                    '& fieldset': { borderColor: 'white' },
+                    '&:hover fieldset': { borderColor: 'white' },
+                    '&.Mui-focused fieldset': { borderColor: 'white' },
+                  },
+                }}
+                InputLabelProps={{ style: { color: 'white' } }}
               />
               <TextField
                 size="small"
@@ -181,6 +248,15 @@ const BatchPage: React.FC = () => {
                 onChange={(e) => setMaxWave(e.target.value)}
                 type="number"
                 fullWidth
+                sx={{
+                  '& .MuiInputBase-input': { color: 'white' },
+                  '& .MuiOutlinedInput-root': {
+                    '& fieldset': { borderColor: 'white' },
+                    '&:hover fieldset': { borderColor: 'white' },
+                    '&.Mui-focused fieldset': { borderColor: 'white' },
+                  },
+                }}
+                InputLabelProps={{ style: { color: 'white' } }}
               />
             </Box>
             <FormControlLabel

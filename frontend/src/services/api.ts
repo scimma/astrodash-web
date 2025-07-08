@@ -143,6 +143,28 @@ class Api {
       throw error;
     }
   }
+
+  async batchProcessMultiple({ files, params }: { files: File[]; params: any }): Promise<any> {
+    const formData = new FormData();
+
+    // Add each file to the form data
+    files.forEach((file, index) => {
+      formData.append(`files`, file);
+    });
+
+    formData.append('params', JSON.stringify(params));
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/batch-process-multiple`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('API: Error making batch-process-multiple request:', error);
+      throw error;
+    }
+  }
 }
 
 export const api = new Api();

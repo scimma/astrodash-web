@@ -15,7 +15,7 @@ from .services.ml_classifier import MLClassifier
 from .services.astrodash_backend import get_training_parameters, AgeBinning, load_template_spectrum, get_valid_sn_types_and_age_bins
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG, # CHANGE BACK TO INFO
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(),
@@ -308,4 +308,49 @@ async def batch_process(
         return sanitize_for_json(results)
     except Exception as e:
         logger.critical(f"Unhandled exception in /api/batch-process: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/batch-process-multiple")
+async def batch_process_multiple(
+    params: str = Form('{}'),
+    files: List[UploadFile] = File(...)
+):
+    """
+    Accepts multiple individual spectrum files, processes and classifies each, and returns results per file.
+    """
+    try:
+        logger.info("/api/batch-process-multiple endpoint called")
+        parsed_params = json.loads(params) if params else {}
+        results = {}
+
+        for file in files:
+            fname = file.filename
+            if not fname.lower().endswith((".fits", ".dat", ".txt", ".lnw", ".csv")):
+                results[fname] = {"error": "Unsupported file type"}
+                continue
+            try:
+                spectrum_data = spectrum_processor.read_file(file)
+                processed_data = spectrum_processor.process(
+                    x=spectrum_data['x'],
+                    y=spectrum_data['y'],
+                    smoothing=parsed_params.get('smoothing', 0),
+                    known_z=parsed_params.get('knownZ', False),
+                    z_value=parsed_params.get('zValue'),
+                    min_wave=parsed_params.get('minWave'),
+                    max_wave=parsed_params.get('maxWave'),
+                    calculate_rlap=parsed_params.get('calculateRlap', False)
+                )
+                classification_results = ml_classifier.classify(processed_data)
+                results[fname] = {
+                    "spectrum": processed_data,
+                    "classification": classification_results
+                }
+            except Exception as e:
+                logger.error(f"Error processing {fname}: {e}", exc_info=True)
+                results[fname] = {"error": str(e)}
+
+        logger.info("/api/batch-process-multiple completed")
+        return sanitize_for_json(results)
+    except Exception as e:
+        logger.critical(f"Unhandled exception in /api/batch-process-multiple: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
