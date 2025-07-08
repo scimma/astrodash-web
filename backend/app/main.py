@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, Request, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 import json
@@ -13,9 +13,12 @@ import math
 from .services.spectrum_processor import SpectrumProcessor
 from .services.ml_classifier import MLClassifier
 from .services.astrodash_backend import get_training_parameters, AgeBinning, load_template_spectrum, get_valid_sn_types_and_age_bins
+from .services.redshift_estimator import get_median_redshift
+from .services.utils import sanitize_for_json
+from app.services.rlap_calculator import calculate_rlap_with_redshift
 
 logging.basicConfig(
-    level=logging.DEBUG, # CHANGE BACK TO INFO
+    level=logging.DEBUG, # CHANGE BACK TO INFO, DEBUR, ERROR
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(),
@@ -42,17 +45,6 @@ app.add_middleware(
 spectrum_processor = SpectrumProcessor()
 ml_classifier = MLClassifier()
 
-def sanitize_for_json(obj):
-    if isinstance(obj, float):
-        if math.isnan(obj) or math.isinf(obj):
-            return None
-        return obj
-    elif isinstance(obj, dict):
-        return {k: sanitize_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [sanitize_for_json(v) for v in obj]
-    else:
-        return obj
 
 @app.get("/")
 async def read_root():
@@ -65,7 +57,9 @@ async def read_root():
             "osc-references": "/api/osc-references",
             "analysis-options": "/api/analysis-options",
             "template-spectrum": "/api/template-spectrum",
-            "batch-process": "api/batch-process"
+            "batch-process": "api/batch-process",
+            "batch-process-multiple": "api/batch-process-multiple",
+            "estimate-redshift": "/api/estimate-redshift",
         }
     }
 
@@ -79,6 +73,9 @@ async def get_osc_references():
     """
     Get a list of available Open Supernova Catalog (OSC) references.
     These are used as a source for supernova spectra data.
+
+    TODO:
+    Get actual list from wis-tns.org
     """
     try:
         available_refs = [
@@ -354,3 +351,68 @@ async def batch_process_multiple(
     except Exception as e:
         logger.critical(f"Unhandled exception in /api/batch-process-multiple: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/estimate-redshift")
+async def estimate_redshift(request: Request):
+    data = await request.json()
+    x = np.array(data.get("x"))
+    y = np.array(data.get("y"))
+    sn_type = data.get("type")
+    age = data.get("age")
+    # Load templates and parameters
+    from app.services.astrodash_backend import get_training_parameters
+    import os
+    pars = get_training_parameters()
+    w0, w1, nw = pars['w0'], pars['w1'], pars['nw']
+    dwlog = np.log(w1 / w0) / nw
+    log_wave = w0 * np.exp(np.arange(nw) * dwlog)
+    backend_root = os.path.join(os.path.dirname(__file__), '..')
+    template_path = os.path.join(backend_root, 'astrodash_models', 'sn_and_host_templates.npz')
+    import numpy as np
+    data_npz = np.load(template_path, allow_pickle=True)
+    snTemplates_raw = data_npz['snTemplates'].item()
+    snTemplates = {str(k): v for k, v in snTemplates_raw.items()}
+    # Normalize age bin
+    def normalize_age_bin(age):
+        import re
+        age = age.replace('–', '-').replace('to', '-').replace('TO', '-').replace('To', '-')
+        age = age.replace(' ', '')
+        match = re.match(r'(-?\d+)-(-?\d+)', age)
+        if match:
+            return f"{int(match.group(1))} to {int(match.group(2))}"
+        return age
+    age_norm = normalize_age_bin(age)
+    # Find templates for this type/age
+    template_fluxes = []
+    template_names = []
+    template_minmax_indexes = []
+    if sn_type in snTemplates:
+        age_bin_keys = [str(k).strip() for k in snTemplates[sn_type].keys()]
+        if age_norm.strip() in age_bin_keys:
+            real_key = [k for k in snTemplates[sn_type].keys() if str(k).strip() == age_norm.strip()][0]
+            snInfo = snTemplates[sn_type][real_key].get('snInfo', None)
+            if isinstance(snInfo, np.ndarray) and snInfo.shape[0] > 0:
+                for i in range(snInfo.shape[0]):
+                    template_wave = snInfo[i][0]
+                    template_flux = snInfo[i][1]
+                    interp_flux = np.interp(log_wave, template_wave, template_flux, left=0, right=0)
+                    nonzero = np.where(interp_flux != 0)[0]
+                    if len(nonzero) > 0:
+                        tmin, tmax = nonzero[0], nonzero[-1]
+                    else:
+                        tmin, tmax = 0, len(interp_flux) - 1
+                    template_fluxes.append(interp_flux)
+                    template_names.append(f"{sn_type}:{age_norm}")
+                    template_minmax_indexes.append((tmin, tmax))
+    if not template_fluxes:
+        return {"estimated_redshift": None, "estimated_redshift_error": None, "message": "No valid templates found for this type/age."}
+    # Interpolate input spectrum to log-wavelength grid
+    input_flux_log = np.interp(log_wave, x, y, left=0, right=0)
+    input_minmax_index = (np.where(input_flux_log != 0)[0][0], np.where(input_flux_log != 0)[0][-1]) if np.any(input_flux_log != 0) else (0, len(input_flux_log) - 1)
+    est_z, _, _, est_z_err = get_median_redshift(
+        input_flux_log, template_fluxes, nw, dwlog, input_minmax_index, template_minmax_indexes, template_names, outerVal=0.5
+    )
+    return {
+        "estimated_redshift": float(est_z) if est_z is not None else None,
+        "estimated_redshift_error": float(est_z_err) if est_z_err is not None else None
+    }

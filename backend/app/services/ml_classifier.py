@@ -3,9 +3,12 @@ import os
 import tempfile
 import logging
 from .astrodash_backend import (
-    classification_split, combined_prob, RlapCalc, AgeBinning,
+    classification_split, combined_prob, AgeBinning,
     get_training_parameters, LoadInputSpectra, BestTypesListSingleRedshift
 )
+from .redshift_estimator import get_median_redshift
+from .rlap_calculator import calculate_rlap_with_redshift, compute_rlap_for_matches
+from .utils import prepare_log_wavelength_and_templates, get_templates_for_type_age, get_nonzero_minmax, normalize_age_bin
 
 logger = logging.getLogger("ml_classifier")
 
@@ -68,7 +71,7 @@ class MLClassifier:
 
             if not matches:
                 logger.warning("No matches found. Returning mock classification.")
-                return self._mock_classification_response(processed_data, model_path)
+                return {}
 
             def normalize_age_bin(age):
                 # Convert various formats to 'N to M'
@@ -82,21 +85,7 @@ class MLClassifier:
 
             # RLap calculation using real template spectra
             logger.info("Calculating RLap score using real template spectra.")
-            pars = get_training_parameters()
-            w0, w1, nw = pars['w0'], pars['w1'], pars['nw']
-            dwlog = np.log(w1 / w0) / nw
-            log_wave = w0 * np.exp(np.arange(nw) * dwlog)
-            backend_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            template_path = os.path.join(backend_root, 'astrodash_models', 'sn_and_host_templates.npz')
-            data = np.load(template_path, allow_pickle=True)
-            snTemplates_raw = data['snTemplates'].item()
-            snTemplates = {str(k): v for k, v in snTemplates_raw.items()}
-            logger.debug(f"Available sn_types: {list(snTemplates.keys())}")
-            for sn_type_key in snTemplates:
-                logger.debug(f"  {sn_type_key}: {list(snTemplates[sn_type_key].keys())}")
-            input_flux = np.array(processed_data['y'])
-            input_wave = np.array(processed_data['x'])
-            input_flux_log = np.interp(log_wave, input_wave, input_flux, left=0, right=0)
+            log_wave, input_flux_log, snTemplates, dwlog, nw, w0, w1 = prepare_log_wavelength_and_templates(processed_data)
 
             # Find the best match (highest probability)
             best_match_idx = 0
@@ -107,57 +96,38 @@ class MLClassifier:
                 age = best_match['age']
                 age_norm = normalize_age_bin(age)
                 logger.debug(f"Looking for template for RLap: sn_type='{sn_type}', age='{age}' (normalized: '{age_norm}')")
-                if sn_type in snTemplates:
-                    age_bin_keys = [str(k).strip() for k in snTemplates[sn_type].keys()]
-                    if age_norm.strip() in age_bin_keys:
-                        real_key = [k for k in snTemplates[sn_type].keys() if str(k).strip() == age_norm.strip()][0]
-                        snInfo = snTemplates[sn_type][real_key].get('snInfo', None)
-                        if isinstance(snInfo, np.ndarray) and snInfo.shape[0] > 0:
-                            template_wave = snInfo[0][0]
-                            template_flux = snInfo[0][1]
-                            interp_flux = np.interp(log_wave, template_wave, template_flux, left=0, right=0)
-                            nonzero = np.where(interp_flux != 0)[0]
-                            if len(nonzero) > 0:
-                                tmin, tmax = nonzero[0], nonzero[-1]
-                            else:
-                                tmin, tmax = 0, len(interp_flux) - 1
-                            template_fluxes = [interp_flux]
-                            template_names = [f"{sn_type}:{age_norm}"]
-                            template_minmax_indexes = [(tmin, tmax)]
-                        else:
-                            logger.warning(f"No snInfo for template {sn_type}:{age_norm}")
-                            template_fluxes = []
-                            template_names = []
-                            template_minmax_indexes = []
+                estimated_redshift = None
+                estimated_redshift_err = None
+                if not known_z:
+                    # Redshift estimation using all templates for best match
+                    template_fluxes, template_names, template_minmax_indexes = get_templates_for_type_age(snTemplates, sn_type, age_norm, log_wave)
+                    if template_fluxes:
+                        input_minmax_index = minmax_indexes[0] if minmax_indexes else get_nonzero_minmax(input_flux_log)
+                        est_z, _, _, est_z_err = get_median_redshift(
+                            input_flux_log, template_fluxes, nw, dwlog, input_minmax_index, template_minmax_indexes, template_names, outerVal=0.5
+                        )
+                        estimated_redshift = float(est_z) if est_z is not None else None
+                        estimated_redshift_err = float(est_z_err) if est_z_err is not None else None
                     else:
-                        logger.warning(f"Age bin '{age_norm}' not found for sn_type '{sn_type}'. Available: {list(snTemplates[sn_type].keys())}")
-                        template_fluxes = []
-                        template_names = []
-                        template_minmax_indexes = []
+                        logger.warning(f"No valid templates found for sn_type '{sn_type}' and age '{age_norm}'")
                 else:
-                    logger.warning(f"sn_type '{sn_type}' not found in templates. Available: {list(snTemplates.keys())}")
                     template_fluxes = []
                     template_names = []
                     template_minmax_indexes = []
-            else:
-                template_fluxes = []
-                template_names = []
-                template_minmax_indexes = []
 
             if not template_fluxes:
                 logger.error("No valid templates found for RLap calculation.")
                 rlap_label, rlap_warning = "N/A", True
+                for m in matches:
+                    m['rlap'] = rlap_label
+                    m['rlap_warning'] = rlap_warning
+                best_match['rlap'] = rlap_label
+                best_match['rlap_warning'] = rlap_warning
             else:
-                nonzero_input = np.where(input_flux_log != 0)[0]
-                if len(nonzero_input) > 0:
-                    input_minmax_index = (nonzero_input[0], nonzero_input[-1])
-                else:
-                    input_minmax_index = (0, len(input_flux_log) - 1)
-                rlap_calc = RlapCalc(input_flux_log, template_fluxes, template_names, log_wave, input_minmax_index, template_minmax_indexes)
-                rlap_label, rlap_warning = rlap_calc.rlap_label()
-            logger.info(f"RLap score calculated: {rlap_label} (warning: {rlap_warning})")
-            for m in matches:
-                m['rlap'] = rlap_label
+                matches, best_match = compute_rlap_for_matches(
+                    matches, best_match, log_wave, input_flux_log, template_fluxes, template_names, template_minmax_indexes, known_z
+                )
+            logger.info(f"RLap score calculated: {best_match.get('rlap', 'N/A')} (warning: {best_match.get('rlap_warning', False)})")
 
             best_match_list_for_prob = [[m['type'], m['age'], m['probability']] for m in matches]
             best_type, best_age, prob_total, reliable_flag = combined_prob(best_match_list_for_prob)
@@ -165,12 +135,20 @@ class MLClassifier:
             best_match = {
                 'type': best_type, 'age': best_age, 'probability': prob_total,
                 'redshift': processed_data['redshift'],
-                'rlap': rlap_label
+                'rlap': best_match['rlap']
             }
 
             for m in matches:
                 if m['type'] == best_type and m['age'] == best_age:
                     m['reliable'] = reliable_flag
+
+            # Attach estimated redshift to best_match and best_matches if available
+            if not known_z and estimated_redshift is not None:
+                best_match['estimated_redshift'] = estimated_redshift
+                best_match['estimated_redshift_error'] = estimated_redshift_err
+                for m in matches:
+                    m['estimated_redshift'] = estimated_redshift
+                    m['estimated_redshift_error'] = estimated_redshift_err
 
             logger.info("Classification complete.")
             return {
@@ -185,28 +163,6 @@ class MLClassifier:
             if os.path.exists(temp_file_path):
                 os.unlink(temp_file_path)
                 logger.debug(f"Temporary file deleted: {temp_file_path}")
-
-    def _mock_classification_response(self, processed_data, model_path_not_found):
-        logger.debug(f"Returning mock classification for model path: {model_path_not_found}")
-        mock_match = {
-            'type': 'Ia-norm', 'age': '0 to 5',
-            'probability': 0.99, 'redshift': processed_data['redshift'],
-            'rlap': None, 'reliable': True
-        }
-        return {
-            'best_matches': [mock_match],
-            'best_match': mock_match,
-            'reliable_matches': True
-        }
-
-    def extract_features(self, spectrum_data):
-        logger.debug("Extracting features from spectrum data.")
-        return np.random.rand(10)
-
-    def calculate_rlap(self, spectrum1, spectrum2):
-        logger.debug("Calculating RLAP score between two spectra.")
-        # Use the new RlapCalc if needed elsewhere
-        return None
 
     def load_model(self, model_path):
         logger.debug(f"Called load_model with path: {model_path}")
