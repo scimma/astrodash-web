@@ -3,7 +3,6 @@ import pickle
 import numpy as np
 import json
 import logging
-from six.moves.urllib.request import urlopen
 from astropy.time import Time
 from scipy.signal import medfilt, argrelmax
 from scipy.interpolate import splrep, splev

@@ -18,7 +18,7 @@ from .services.utils import sanitize_for_json
 from app.services.rlap_calculator import calculate_rlap_with_redshift
 
 logging.basicConfig(
-    level=logging.DEBUG, # CHANGE BACK TO INFO, DEBUR, ERROR
+    level=logging.INFO, # CHANGE BACK TO INFO, DEBUR, ERROR
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(),

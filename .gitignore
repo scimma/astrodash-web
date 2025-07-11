@@ -9,6 +9,8 @@ venv/
 
 # Ignore backend models and data
 backend/astrodash_models/*
+backend/astrodash/*
+backend/dev_tests/astroset/training_set/*
 
 #Ignore testing files
 batch_upload.zip

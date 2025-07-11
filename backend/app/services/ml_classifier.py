@@ -10,6 +10,8 @@ from .redshift_estimator import get_median_redshift
 from .rlap_calculator import calculate_rlap_with_redshift, compute_rlap_for_matches
 from .utils import prepare_log_wavelength_and_templates, get_templates_for_type_age, get_nonzero_minmax, normalize_age_bin
 
+import torch
+
 logger = logging.getLogger("ml_classifier")
 
 class MLClassifier:
@@ -171,3 +173,71 @@ class MLClassifier:
     def save_model(self, model_path):
         logger.debug(f"Called save_model with path: {model_path}")
         pass
+
+
+def _interpolate_to_1024(arr):
+    arr = np.asarray(arr)
+    if len(arr) == 1024:
+        return arr
+    x_old = np.linspace(0, 1, len(arr))
+    x_new = np.linspace(0, 1, 1024)
+    return np.interp(x_new, x_old, arr)
+
+class TransformerClassifier:
+    def __init__(self):
+        services_dir = os.path.dirname(os.path.abspath(__file__))
+        backend_root = os.path.join(services_dir, '..', '..')
+        self.model_path = os.path.join(backend_root, 'astrodash_models', 'yuqing_models', 'TF_wiserep_v6.pt')
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model = self._load_model()
+        logger.info(f"Loaded Transformer model from {self.model_path}")
+        # TODO: Replace with actual class label list when available
+        self.class_labels = None
+
+    def _load_model(self):
+        # TODO: Replace with actual model class if available
+        try:
+            model = torch.load(self.model_path, map_location=self.device)
+            if hasattr(model, 'eval'):
+                model.eval()
+            return model
+        except Exception as e:
+            logger.error(f"Failed to load transformer model: {e}")
+            raise
+
+    def classify(self, processed_data):
+        """
+        Classify spectrum data using the transformer-based model.
+        processed_data: dict with keys 'x', 'y', 'redshift', etc.
+        Returns: dict with classification results.
+        """
+        try:
+            x = _interpolate_to_1024(processed_data['x'])
+            y = _interpolate_to_1024(processed_data['y'])
+            redshift = processed_data.get('redshift', 0.0)
+            wavelength = torch.tensor(x, dtype=torch.float32).unsqueeze(0).to(self.device)  # [1, 1024]
+            flux = torch.tensor(y, dtype=torch.float32).unsqueeze(0).to(self.device)        # [1, 1024]
+            redshift_tensor = torch.tensor([[redshift]], dtype=torch.float32).to(self.device)  # [1, 1]
+            with torch.no_grad():
+                logits = self.model(wavelength, flux, redshift_tensor)
+                probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
+            # TODO: Replace with actual class label mapping when available
+            top_indices = np.argsort(probs)[::-1][:3]
+            matches = []
+            for idx in top_indices:
+                class_name = f'class_{idx}' if self.class_labels is None else self.class_labels[idx]
+                matches.append({
+                    'type': class_name,
+                    'probability': float(probs[idx]),
+                    'rlap': None,
+                    'reliable': False
+                })
+            best_match = matches[0] if matches else {}
+            return {
+                'best_matches': matches,
+                'best_match': best_match,
+                'reliable_matches': False
+            }
+        except Exception as e:
+            logger.error(f"Error during transformer classification: {e}")
+            raise
