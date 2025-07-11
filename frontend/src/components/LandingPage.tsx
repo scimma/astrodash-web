@@ -1,11 +1,32 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Box, Button, Container, Typography, useTheme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import ModelSelectionDialog, { ModelType } from './ModelSelectionDialog';
 
 const LandingPage: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'classify' | 'batch' | null>(null);
+
+  const handleButtonClick = (action: 'classify' | 'batch') => {
+    setPendingAction(action);
+    setDialogOpen(true);
+  };
+
+  const handleModelSelect = (model: ModelType) => {
+    if (pendingAction === 'classify') {
+      navigate('/classify', { state: { model } });
+    } else if (pendingAction === 'batch') {
+      navigate('/batch', { state: { model } });
+    }
+  };
+
+  const handleDialogClose = () => {
+    setDialogOpen(false);
+    setPendingAction(null);
+  };
 
   return (
     <Box
@@ -89,7 +110,7 @@ const LandingPage: React.FC = () => {
               <Button
                 variant="contained"
                 size="large"
-                onClick={() => navigate('/classify')}
+                onClick={() => handleButtonClick('classify')}
                 sx={{
                   backgroundColor: '#2196f3',
                   color: 'white',
@@ -113,7 +134,7 @@ const LandingPage: React.FC = () => {
               <Button
                 variant="outlined"
                 size="large"
-                onClick={() => navigate('/batch')}
+                onClick={() => handleButtonClick('batch')}
                 sx={{
                   color: 'white',
                   borderColor: '#2196f3',
@@ -133,6 +154,12 @@ const LandingPage: React.FC = () => {
           </Box>
         </motion.div>
       </Container>
+
+      <ModelSelectionDialog
+        open={dialogOpen}
+        onClose={handleDialogClose}
+        onModelSelect={handleModelSelect}
+      />
     </Box>
   );
 };

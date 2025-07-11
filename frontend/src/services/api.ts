@@ -16,6 +16,7 @@ export interface ProcessParams {
   calculateRlap: boolean;
   file?: File;
   oscRef?: string;
+  modelType?: 'dash' | 'transformer';
 }
 
 export interface ProcessResponse {
@@ -41,6 +42,7 @@ export interface ProcessResponse {
     };
     reliable_matches: boolean;
   };
+  model_type?: string;
 }
 
 export interface AnalysisOptionsResponse {
@@ -79,7 +81,8 @@ class Api {
       minWave: params.minWave,
       maxWave: params.maxWave,
       calculateRlap: params.calculateRlap,
-      oscRef: params.oscRef
+      oscRef: params.oscRef,
+      modelType: params.modelType || 'dash'  // Default to dash if not specified
     };
 
     console.log('API: Adding JSON params to form data:', jsonParams);
@@ -130,7 +133,14 @@ class Api {
   async batchProcess({ zipFile, params }: { zipFile: File; params: any }): Promise<any> {
     const formData = new FormData();
     formData.append('zip_file', zipFile);
-    formData.append('params', JSON.stringify(params));
+
+    // Ensure modelType is included in params
+    const paramsWithModel = {
+      ...params,
+      modelType: params.modelType || 'dash'  // Default to dash if not specified
+    };
+
+    formData.append('params', JSON.stringify(paramsWithModel));
     try {
       const response = await axios.post(`${API_BASE_URL}/api/batch-process`, formData, {
         headers: {
@@ -152,7 +162,13 @@ class Api {
       formData.append(`files`, file);
     });
 
-    formData.append('params', JSON.stringify(params));
+    // Ensure modelType is included in params
+    const paramsWithModel = {
+      ...params,
+      modelType: params.modelType || 'dash'  // Default to dash if not specified
+    };
+
+    formData.append('params', JSON.stringify(paramsWithModel));
     try {
       const response = await axios.post(`${API_BASE_URL}/api/batch-process-multiple`, formData, {
         headers: {

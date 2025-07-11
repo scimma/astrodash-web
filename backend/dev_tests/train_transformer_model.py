@@ -184,28 +184,24 @@ def load_datasets():
     # Paths to saved arrays
     astroset_dir = os.path.join(os.path.dirname(__file__), 'astroset', 'training_set')
     train_images = np.load(os.path.join(astroset_dir, 'train_images.npy'))
-    train_labels = np.load(os.path.join(astroset_dir, 'train_labels.npy'))
-    # with open(os.path.join(astroset_dir, 'train_filenames.pkl'), 'rb') as f:
-    #     train_filenames = pickle.load(f)
-    # with open(os.path.join(astroset_dir, 'train_type_names.pkl'), 'rb') as f:
-    #     train_type_names = pickle.load(f)
-
     test_images = np.load(os.path.join(astroset_dir, 'test_images.npy'))
-    test_labels = np.load(os.path.join(astroset_dir, 'test_labels.npy'))
-    # with open(os.path.join(astroset_dir, 'test_filenames.pkl'), 'rb') as f:
-    #     test_filenames = pickle.load(f)
-    # with open(os.path.join(astroset_dir, 'test_type_names.pkl'), 'rb') as f:
-    #     test_type_names = pickle.load(f)
+
+    # Load original string labels
+    with open(os.path.join(astroset_dir, 'train_type_names.pkl'), 'rb') as f:
+        train_type_names = pickle.load(f)
+    with open(os.path.join(astroset_dir, 'test_type_names.pkl'), 'rb') as f:
+        test_type_names = pickle.load(f)
 
     print(f"Loaded {train_images.shape[0]} train and {test_images.shape[0]} test samples.")
 
-    # Create label mapping to ensure consecutive indices starting from 0
-    all_unique_labels = np.unique(np.concatenate([train_labels, test_labels]))
+    # Create label mapping using string labels
+    all_unique_labels = np.unique(np.concatenate([train_type_names, test_type_names]))
     label_to_idx = {label: idx for idx, label in enumerate(all_unique_labels)}
+    idx_to_label = {idx: label for label, idx in label_to_idx.items()}
 
-    # Map labels to consecutive indices
-    train_labels_mapped = np.array([label_to_idx[label] for label in train_labels])
-    test_labels_mapped = np.array([label_to_idx[label] for label in test_labels])
+    # Map string labels to indices
+    train_labels_mapped = np.array([label_to_idx[label] for label in train_type_names])
+    test_labels_mapped = np.array([label_to_idx[label] for label in test_type_names])
 
     # Convert to torch tensors
     test_images_tensor = torch.tensor(test_images, dtype=torch.float32)
@@ -220,21 +216,28 @@ def load_datasets():
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size)
 
-    return train_loader, test_loader, train_labels_mapped
+    return train_loader, test_loader, train_labels_mapped, test_labels_mapped, idx_to_label
+
 
 def train_loop():
     num_epochs = 1000  # Train for 1000 epochs
     learning_rate = 1e-4
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    train_loader, test_loader, train_labels = load_datasets()
+    train_loader, test_loader, train_labels, test_labels, idx_to_label = load_datasets()
 
-    # Calculate number of classes based on the maximum label value + 1
-    num_classes = train_labels.max() + 1
-    print(f"Number of classes for model: {num_classes} (max label: {train_labels.max()})")
+    # Calculate number of classes based on the mapping
+    num_classes = len(idx_to_label)
+    print(f"Number of classes for model: {num_classes} (max label: {max(idx_to_label.keys())})")
 
     # Model setup
     model = CNNSpectraClassifier(num_classes=num_classes).to(device)
+    save_path = "cnn_spectra_model.pth"
+    if os.path.exists(save_path):
+        model.load_state_dict(torch.load(save_path, map_location=device))
+        print(f"Loaded model weights from {save_path}, continuing training.")
+    else:
+        print("No existing model checkpoint found. Training from scratch.")
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss()
 
@@ -307,92 +310,26 @@ def train_loop():
     print(f"Training complete. Time spent: {t2-t1:.2f} seconds.")
 
     # Save the model
-    save_path = "cnn_spectra_model.pth"
     torch.save(model.state_dict(), save_path)
     print(f"Model saved to {save_path}")
 
+    # Save the label mapping for later evaluation
+    import pickle
+    with open("label_mapping.pkl", "wb") as f:
+        pickle.dump(idx_to_label, f)
+    print("Label mapping saved to label_mapping.pkl")
+
     return model, test_loader, device
 
-def plot_results(model, test_loader, device):
-    # Plot confusion matrix for test set by SN type only
-    print("Computing confusion matrix for test set (by SN type only)...")
-    model.eval()
-
-    # SN type list from original Astrodash
-    sn_types = ['Ia-norm', 'Ia-91T', 'Ia-91bg', 'Ia-csm', 'Iax', 'Ia-pec',
-                'Ib-norm', 'Ibn', 'IIb', 'Ib-pec', 'Ic-norm', 'Ic-broad',
-                'Ic-pec', 'IIP', 'IIL', 'IIn', 'II-pec']
-
-    with torch.no_grad():
-        all_preds = []
-        all_true = []
-        all_pred_types = []
-        all_true_types = []
-
-        for test_xs, test_ys in test_loader:
-            test_xs, test_ys = test_xs.to(device), test_ys.to(device)
-            test_logits = model(test_xs)
-            preds = torch.argmax(test_logits, 1)
-            all_preds.append(preds.cpu().numpy())
-            all_true.append(test_ys.cpu().numpy())
-
-        all_preds = np.concatenate(all_preds)
-        all_true = np.concatenate(all_true)
-
-        # Convert age bin labels back to original labels to extract SN types
-        # We need to reverse the mapping to get original labels
-        all_unique_labels = np.unique(np.concatenate([train_labels, test_labels]))
-        idx_to_label = {idx: label for idx, label in enumerate(all_unique_labels)}
-
-        # Convert mapped indices back to original labels
-        original_preds = np.array([idx_to_label[pred] for pred in all_preds])
-        original_true = np.array([idx_to_label[true] for true in all_true])
-
-        # Extract SN types from age bin labels (e.g., "Ia-norm: 4 to 8" -> "Ia-norm")
-        for pred_label, true_label in zip(original_preds, original_true):
-            # Extract type from the label (assuming format like "Ia-norm: 4 to 8")
-            pred_type = str(pred_label).split(':')[0].strip()
-            true_type = str(true_label).split(':')[0].strip()
-
-            # Map to type index
-            if pred_type in sn_types:
-                pred_type_idx = sn_types.index(pred_type)
-            else:
-                pred_type_idx = 0  # Default to first type if not found
-
-            if true_type in sn_types:
-                true_type_idx = sn_types.index(true_type)
-            else:
-                true_type_idx = 0  # Default to first type if not found
-
-            all_pred_types.append(pred_type_idx)
-            all_true_types.append(true_type_idx)
-
-        # Create confusion matrix for SN types only
-        cm = confusion_matrix(all_true_types, all_pred_types, labels=range(len(sn_types)))
-        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=sn_types)
-        disp.plot(xticks_rotation='vertical')
-        plt.title('Confusion Matrix (Test Set) - SN Types Only')
-        plt.tight_layout()
-        plt.show()
-
-        # Print accuracy by type
-        print("\nAccuracy by SN Type:")
-        for i, sn_type in enumerate(sn_types):
-            type_mask = np.array(all_true_types) == i
-            if np.sum(type_mask) > 0:
-                type_acc = np.mean(np.array(all_pred_types)[type_mask] == np.array(all_true_types)[type_mask])
-                print(f"{sn_type}: {type_acc:.3f} ({np.sum(type_mask)} samples)")
-
-        # Overall accuracy
-        overall_acc = np.mean(np.array(all_pred_types) == np.array(all_true_types))
-        print(f"\nOverall accuracy (by type): {overall_acc:.3f}")
-
-def plot_results_from_checkpoint(model_path, test_loader, train_labels, test_labels, device):
-    import torch
-    import numpy as np
-    from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-    import matplotlib.pyplot as plt
+def plot_results_from_checkpoint(model_path, test_loader, device):
+    # Try to load the label mapping from file
+    mapping_path = "label_mapping.pkl"
+    if not os.path.exists(mapping_path):
+        print(f"ERROR: {mapping_path} not found. You must save the label mapping during training.")
+        return
+    with open(mapping_path, "rb") as f:
+        idx_to_label = pickle.load(f)
+    print("[DEBUG] Loaded idx_to_label from label_mapping.pkl (first 10):", {k: idx_to_label[k] for k in list(idx_to_label)[:10]})
 
     # SN type list from original Astrodash
     sn_types = [
@@ -401,14 +338,8 @@ def plot_results_from_checkpoint(model_path, test_loader, train_labels, test_lab
         'Ic-pec', 'IIP', 'IIL', 'IIn', 'II-pec'
     ]
 
-    # Helper to extract SN type from label string
     def extract_sn_type(label_str):
         return str(label_str).split(':')[0].strip()
-
-    # Rebuild the mapping from index to original label and SN type
-    all_unique_labels = np.unique(np.concatenate([train_labels, test_labels]))
-    idx_to_label = {idx: label for idx, label in enumerate(all_unique_labels)}
-    idx_to_type = {idx: extract_sn_type(label) for idx, label in idx_to_label.items()}
 
     # Load model
     num_classes = len(idx_to_label)
@@ -429,17 +360,25 @@ def plot_results_from_checkpoint(model_path, test_loader, train_labels, test_lab
     all_preds = np.concatenate(all_preds)
     all_true = np.concatenate(all_true)
 
-    # Map indices to SN types
-    all_pred_types = [sn_types.index(idx_to_type[pred]) if idx_to_type[pred] in sn_types else -1 for pred in all_preds]
-    all_true_types = [sn_types.index(idx_to_type[true]) if idx_to_type[true] in sn_types else -1 for true in all_true]
+    # Map indices to original string labels
+    all_pred_labels = [idx_to_label.get(idx, 'UNKNOWN') for idx in all_preds]
+    all_true_labels = [idx_to_label.get(idx, 'UNKNOWN') for idx in all_true]
+
+    # Map to SN types
+    all_pred_types = [extract_sn_type(lbl) for lbl in all_pred_labels]
+    all_true_types = [extract_sn_type(lbl) for lbl in all_true_labels]
+
+    # Map SN types to indices in sn_types list, -1 if not found
+    all_pred_type_indices = [sn_types.index(t) if t in sn_types else -1 for t in all_pred_types]
+    all_true_type_indices = [sn_types.index(t) if t in sn_types else -1 for t in all_true_types]
 
     # Filter out any -1 (unknown types)
-    valid = np.array([p != -1 and t != -1 for p, t in zip(all_pred_types, all_true_types)])
-    all_pred_types = np.array(all_pred_types)[valid]
-    all_true_types = np.array(all_true_types)[valid]
+    valid = np.array([p != -1 and t != -1 for p, t in zip(all_pred_type_indices, all_true_type_indices)])
+    all_pred_type_indices = np.array(all_pred_type_indices)[valid]
+    all_true_type_indices = np.array(all_true_type_indices)[valid]
 
     # Plot confusion matrix
-    cm = confusion_matrix(all_true_types, all_pred_types, labels=range(len(sn_types)))
+    cm = confusion_matrix(all_true_type_indices, all_pred_type_indices, labels=range(len(sn_types)))
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=sn_types)
     disp.plot(xticks_rotation='vertical')
     plt.title('Confusion Matrix (Test Set) - SN Types Only')
@@ -449,11 +388,11 @@ def plot_results_from_checkpoint(model_path, test_loader, train_labels, test_lab
     # Print accuracy by type
     print("\nAccuracy by SN Type:")
     for i, sn_type in enumerate(sn_types):
-        type_mask = all_true_types == i
+        type_mask = all_true_type_indices == i
         if np.sum(type_mask) > 0:
-            type_acc = np.mean(all_pred_types[type_mask] == all_true_types[type_mask])
+            type_acc = np.mean(all_pred_type_indices[type_mask] == all_true_type_indices[type_mask])
             print(f"{sn_type}: {type_acc:.3f} ({np.sum(type_mask)} samples)")
-    overall_acc = np.mean(all_pred_types == all_true_types)
+    overall_acc = np.mean(all_pred_type_indices == all_true_type_indices)
     print(f"\nOverall accuracy (by type): {overall_acc:.3f}")
 
 # Main training function

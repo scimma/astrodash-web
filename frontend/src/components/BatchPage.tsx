@@ -2,6 +2,9 @@ import React, { useState } from 'react';
 import { Box, Typography, Button, Paper, TextField, Slider, Checkbox, FormControlLabel, CircularProgress, Alert, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, IconButton } from '@mui/material';
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import { api } from '../services/api';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { ModelType } from './ModelSelectionDialog';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 
 // Helper to generate random stars
 const generateStars = (count: number) => {
@@ -35,6 +38,12 @@ const generateStars = (count: number) => {
 };
 
 const BatchPage: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Get the selected model from navigation state, default to 'dash'
+  const selectedModel: ModelType = location.state?.model || 'dash';
+
   const [files, setFiles] = useState<File[]>([]);
   const [smoothing, setSmoothing] = useState<number>(0);
   const [knownZ, setKnownZ] = useState<boolean>(false);
@@ -74,6 +83,7 @@ const BatchPage: React.FC = () => {
         minWave: parseInt(minWave),
         maxWave: parseInt(maxWave),
         calculateRlap,
+        modelType: selectedModel  // Pass the selected model
       };
 
       // Check if we have a zip file
@@ -88,6 +98,10 @@ const BatchPage: React.FC = () => {
         const response = await api.batchProcessMultiple({ files, params });
         setResults(response);
       }
+
+      // Log the model type used
+      console.log(`Batch classification completed using ${selectedModel} model`);
+
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Batch classification failed.');
     } finally {
@@ -97,6 +111,24 @@ const BatchPage: React.FC = () => {
 
   return (
     <Box sx={{ minHeight: '100vh', position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', pt: 6, overflow: 'hidden', background: 'linear-gradient(135deg, #0d1b2a 0%, #1b263b 100%)' }}>
+      {/* Back button at top left */}
+      <IconButton
+        onClick={() => navigate(-1)}
+        sx={{
+          position: 'absolute',
+          top: 24,
+          left: 24,
+          zIndex: 2,
+          color: 'white',
+          background: 'rgba(20, 30, 50, 0.7)',
+          boxShadow: '0 2px 8px 0 rgba(0,0,0,0.25)',
+          '&:hover': { background: 'rgba(20, 30, 50, 0.9)' },
+        }}
+        aria-label="Back"
+        size="large"
+      >
+        <ArrowBackIcon fontSize="inherit" />
+      </IconButton>
       {/* Twinkling stars background */}
       <style>{`
         @keyframes twinkle {
@@ -112,9 +144,21 @@ const BatchPage: React.FC = () => {
       </Box>
       {/* Main content */}
       <Box sx={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <Typography variant="h3" gutterBottom sx={{ color: 'white', textShadow: '0 2px 8px #000' }}>
-          Batch Classification
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+          <Typography variant="h3" gutterBottom sx={{ color: 'white', textShadow: '0 2px 8px #000' }}>
+            Batch Classification
+          </Typography>
+          {/* Model indicator */}
+          <Chip
+            label={`${selectedModel === 'transformer' ? 'Transformer' : 'Dash'} Model`}
+            sx={{
+              backgroundColor: selectedModel === 'transformer' ? 'rgba(255, 152, 0, 0.2)' : 'rgba(76, 175, 80, 0.2)',
+              color: selectedModel === 'transformer' ? '#ff9800' : '#4caf50',
+              border: `1px solid ${selectedModel === 'transformer' ? '#ff9800' : '#4caf50'}`,
+            }}
+            size="small"
+          />
+        </Box>
         <Typography variant="body1" sx={{ mb: 4, color: 'white', textShadow: '0 1px 4px #000' }}>
           Upload multiple individual files or a zip file containing spectra for batch classification.
         </Typography>

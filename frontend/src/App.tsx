@@ -8,7 +8,7 @@ import SupernovaClassifier from './components/SupernovaClassifier';
 import BatchPage from './components/BatchPage';
 
 function App() {
-  const [mode, setMode] = useState<'light' | 'dark'>('light');
+  const [mode, setMode] = useState<'light' | 'dark'>('dark');
 
   const colorMode = useMemo(
     () => ({

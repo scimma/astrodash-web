@@ -99,8 +99,6 @@ def sanitize_for_json(obj, _path="root"):
     elif isinstance(obj, (np.integer, np.int32, np.int64)):
         return int(obj)
     elif isinstance(obj, (np.bool_, bool)):
-        if isinstance(obj, np.bool_):
-            print(f"DEBUG: Found numpy.bool_ at {_path} with value {obj}")
         return bool(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()

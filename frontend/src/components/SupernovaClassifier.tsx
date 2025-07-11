@@ -38,6 +38,8 @@ import { api, ProcessParams, ProcessResponse, LineListResponse } from '../servic
 import { ResponsiveContainer, Customized as RechartsCustomized } from 'recharts';
 import AnalysisOptionPanel from './AnalysisOptionPanel';
 import CloseIcon from '@mui/icons-material/Close';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { ModelType } from './ModelSelectionDialog';
 
 interface SupernovaClassifierProps {
   toggleColorMode: () => void;
@@ -85,6 +87,12 @@ type ChartContextProps = {
 };
 
 const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMode, currentMode }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Get the selected model from navigation state, default to 'dash'
+  const selectedModel: ModelType = location.state?.model || 'dash';
+
   // State for file selection
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState<string>('Select SN File...');
@@ -363,7 +371,8 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
         maxWave: parseInt(maxWave),
         calculateRlap,
         file: selectedFile || undefined,
-        oscRef: oscRef || undefined
+        oscRef: oscRef || undefined,
+        modelType: selectedModel  // Pass the selected model
       };
 
       console.log('Calling API with params:', params);
@@ -577,23 +586,30 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
 
   return (
     <Container maxWidth="xl" sx={{ py: 2 }}>
+      <Box display="flex" alignItems="center" mb={2}>
+        <Button variant="outlined" color="primary" onClick={() => navigate('/')}>Back</Button>
+        <Typography variant="h4" component="h1" ml={2} sx={{ flexGrow: 1 }}>
+          Supernova Classifier
+        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          {/* Model indicator */}
+          <Chip
+            label={`${selectedModel === 'transformer' ? 'Transformer' : 'Dash'} Model`}
+            color={selectedModel === 'transformer' ? 'warning' : 'success'}
+            variant="outlined"
+            size="small"
+          />
+          <IconButton onClick={toggleColorMode} color="inherit">
+            {currentMode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+          </IconButton>
+        </Box>
+      </Box>
       {/* Error Snackbar */}
       <Snackbar open={errorOpen} autoHideDuration={8000} onClose={() => setErrorOpen(false)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Alert onClose={() => setErrorOpen(false)} severity="error" sx={{ width: '100%' }} variant="filled">
           {error}
         </Alert>
       </Snackbar>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-        <Typography variant="h4" component="h1" gutterBottom>Supernova Classifier</Typography>
-        <Box>
-          <IconButton sx={{ ml: 1 }} onClick={toggleColorMode} color="inherit">
-            {currentMode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
-          </IconButton>
-          <IconButton color="inherit" aria-label="help" onClick={handleHelp}>
-            <HelpOutlineIcon />
-          </IconButton>
-        </Box>
-      </Box>
 
       <Grid container spacing={2}>
         {/* Left Panel */}

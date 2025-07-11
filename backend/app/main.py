@@ -11,7 +11,7 @@ import io
 import math
 
 from .services.spectrum_processor import SpectrumProcessor
-from .services.ml_classifier import MLClassifier
+from .services.ml_classifier import MLClassifier, TransformerClassifier
 from .services.astrodash_backend import get_training_parameters, AgeBinning, load_template_spectrum, get_valid_sn_types_and_age_bins
 from .services.redshift_estimator import get_median_redshift
 from .services.utils import sanitize_for_json
@@ -43,63 +43,50 @@ app.add_middleware(
 
 # Service Instantiation
 spectrum_processor = SpectrumProcessor()
-ml_classifier = MLClassifier()
 
+def get_classifier(model_type: str):
+    """Get the appropriate classifier based on model type"""
+    if model_type == 'transformer':
+        logger.info("Instantiating TransformerClassifier")
+        return TransformerClassifier()
+    else:
+        logger.info("Instantiating MLClassifier (Dash)")
+        return MLClassifier()
 
 @app.get("/")
 async def read_root():
-    """Root endpoint."""
-    return {
-        "message": "Welcome to Astrodash API",
-        "endpoints": {
-            "health": "/health",
-            "process": "/process",
-            "osc-references": "/api/osc-references",
-            "analysis-options": "/api/analysis-options",
-            "template-spectrum": "/api/template-spectrum",
-            "batch-process": "api/batch-process",
-            "batch-process-multiple": "api/batch-process-multiple",
-            "estimate-redshift": "/api/estimate-redshift",
-        }
-    }
+    return {"message": "Welcome to Astrodash API"}
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
     return {"status": "healthy"}
 
 @app.get("/api/osc-references", summary="Get available OSC references")
 async def get_osc_references():
     """
-    Get a list of available Open Supernova Catalog (OSC) references.
-    These are used as a source for supernova spectra data.
-
-    TODO:
-    Get actual list from wis-tns.org
+    Get a list of available OSC references for testing.
     """
     try:
-        available_refs = [
-            'osc-sn2002er-0',
-            'osc-sn2011fe-0',
-            'osc-sn2014J-0',
-            'osc-sn1998aq-0',
-            'osc-sn1999ee-0',
-            'osc-sn2005cf-0',
-            'osc-sn2007af-0',
-            'osc-sn2009ig-0',
-            'osc-sn2012cg-0',
-            'osc-sn2013dy-0',
-            'osc-sn2014dt-0',
-            'osc-sn2016coj-0',
+        logger.info("Requested OSC references")
+        # Return a list of OSC references for testing
+        references = [
+            "https://www.wiserep.org/spectrum/view/12345",
+            "https://www.wiserep.org/spectrum/view/67890",
+            "https://www.wiserep.org/spectrum/view/11111",
+            "https://www.wiserep.org/spectrum/view/22222",
+            "https://www.wiserep.org/spectrum/view/33333"
         ]
-        logger.info(f"Returning {len(available_refs)} OSC references.")
         return {
-            'status': 'success',
-            'references': available_refs
+            "status": "success",
+            "references": references,
+            "message": "OSC references retrieved successfully"
         }
     except Exception as e:
-        logger.error(f"Error fetching OSC references: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error fetching OSC references: {e}")
+        return {
+            "status": "error",
+            "message": f"Failed to fetch OSC references: {str(e)}"
+        }
 
 @app.post("/process")
 async def process_spectrum(
@@ -109,16 +96,27 @@ async def process_spectrum(
     # Get spectrum data
     try:
         logger.info("/process endpoint called")
+        logger.info(f"Received params: {params}")
+        logger.info(f"Received file: {file.filename if file else 'None'}")
+
         parsed_params = json.loads(params) if params else {}
-        logger.debug(f"Parsed params: {parsed_params}")
+        logger.info(f"Parsed params: {parsed_params}")
+
+        # Extract model type from parameters, default to 'dash'
+        model_type = parsed_params.get('modelType', 'dash')
+        if model_type not in ['dash', 'transformer']:
+            model_type = 'dash'  # Default to dash if invalid model type
+        logger.info(f"Using model type: {model_type}")
+
+        # Handle spectrum data - either from file or OSC reference
         spectrum_data = None
         try:
             if file:
-                logger.info(f"File uploaded: {file.filename}")
+                logger.info(f"Processing uploaded file: {file.filename}")
                 spectrum_data = spectrum_processor.read_file(file)
             elif 'oscRef' in parsed_params:
                 osc_ref = parsed_params.get('oscRef')
-                logger.info(f"OSC reference: {osc_ref}")
+                logger.info(f"Processing OSC reference: {osc_ref}")
                 if osc_ref:
                     spectrum_data = spectrum_processor.read_file(osc_ref)
         except RuntimeError as e:
@@ -129,11 +127,13 @@ async def process_spectrum(
             raise HTTPException(status_code=400, detail=f"Spectrum reading error: {e}")
 
         if not spectrum_data:
-            logger.warning("No spectrum file or OSC reference provided.")
+            logger.error("No spectrum file or OSC reference provided")
             raise HTTPException(status_code=400, detail="No spectrum file or OSC reference provided")
 
-        # Preprocess spectrum
+        logger.info("About to process spectrum...")
+        # Process spectrum
         try:
+            logger.info(f"Spectrum data loaded, shape: {len(spectrum_data.get('x', []))} points")
             processed_data = spectrum_processor.process(
                 x=spectrum_data['x'],
                 y=spectrum_data['y'],
@@ -149,23 +149,27 @@ async def process_spectrum(
             logger.error(f"Exception in preprocessing: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Preprocessing error: {e}")
 
-        # Classify spectrum
+        logger.info("About to classify spectrum...")
+        # Classify spectrum with selected model
         try:
-            classification_results = ml_classifier.classify(processed_data)
-            logger.info("Classification completed successfully.")
+            classifier = get_classifier(model_type)
+            classification_results = classifier.classify(processed_data)
+            logger.info(f"Classification completed successfully with {model_type} model.")
         except Exception as e:
             logger.error(f"Exception in classification: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Classification error: {e}")
 
         logger.info("/process completed successfully")
-        return {
+        return sanitize_for_json({
             "spectrum": processed_data,
-            "classification": classification_results
-        }
+            "classification": classification_results,
+            "model_type": model_type
+        })
     except HTTPException:
         raise
     except Exception as e:
-        logger.critical(f"Unhandled exception in /process: {e}", exc_info=True)
+        import traceback
+        logger.critical(f"Unhandled exception in /process: {e}\n{traceback.format_exc()}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/analysis-options")
@@ -247,6 +251,16 @@ async def batch_process(
     try:
         logger.info("/api/batch-process endpoint called")
         parsed_params = json.loads(params) if params else {}
+
+        # Extract model type from parameters, default to 'dash'
+        model_type = parsed_params.get('modelType', 'dash')
+        if model_type not in ['dash', 'transformer']:
+            model_type = 'dash'  # Default to dash if invalid model type
+        logger.info(f"Using model type: {model_type}")
+
+        # Get the appropriate classifier
+        classifier = get_classifier(model_type)
+
         results = {}
         # Read the uploaded zip file into memory
         zip_bytes = await zip_file.read()
@@ -292,10 +306,11 @@ async def batch_process(
                             max_wave=parsed_params.get('maxWave'),
                             calculate_rlap=parsed_params.get('calculateRlap', False)
                         )
-                        classification_results = ml_classifier.classify(processed_data)
+                        classification_results = classifier.classify(processed_data)
                         results[fname] = {
                             "spectrum": processed_data,
-                            "classification": classification_results
+                            "classification": classification_results,
+                            "model_type": model_type
                         }
                 except Exception as e:
                     # Log first few lines of file for debugging if error occurs
@@ -318,6 +333,16 @@ async def batch_process_multiple(
     try:
         logger.info("/api/batch-process-multiple endpoint called")
         parsed_params = json.loads(params) if params else {}
+
+        # Extract model type from parameters, default to 'dash'
+        model_type = parsed_params.get('modelType', 'dash')
+        if model_type not in ['dash', 'transformer']:
+            model_type = 'dash'  # Default to dash if invalid model type
+        logger.info(f"Using model type: {model_type}")
+
+        # Get the appropriate classifier
+        classifier = get_classifier(model_type)
+
         results = {}
 
         for file in files:
@@ -337,10 +362,11 @@ async def batch_process_multiple(
                     max_wave=parsed_params.get('maxWave'),
                     calculate_rlap=parsed_params.get('calculateRlap', False)
                 )
-                classification_results = ml_classifier.classify(processed_data)
+                classification_results = classifier.classify(processed_data)
                 results[fname] = {
                     "spectrum": processed_data,
-                    "classification": classification_results
+                    "classification": classification_results,
+                    "model_type": model_type
                 }
             except Exception as e:
                 logger.error(f"Error processing {fname}: {e}", exc_info=True)
