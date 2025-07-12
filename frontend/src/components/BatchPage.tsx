@@ -145,9 +145,9 @@ const BatchPage: React.FC = () => {
       {/* Main content */}
       <Box sx={{ position: 'relative', zIndex: 1, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-          <Typography variant="h3" gutterBottom sx={{ color: 'white', textShadow: '0 2px 8px #000' }}>
-            Batch Classification
-          </Typography>
+        <Typography variant="h3" gutterBottom sx={{ color: 'white', textShadow: '0 2px 8px #000' }}>
+          Batch Classification
+        </Typography>
           {/* Model indicator */}
           <Chip
             label={`${selectedModel === 'transformer' ? 'Transformer' : 'Dash'} Model`}

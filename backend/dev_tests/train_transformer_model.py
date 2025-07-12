@@ -26,30 +26,40 @@ dwlog = np.log(w1 / w0) / nw
 outerVal = 0.5
 
 class CNNSpectraClassifier(nn.Module):
-    def __init__(self, num_classes):
+    def __init__(self, num_classes, dropout_rate=0.5):
         super().__init__()
         self.cnn = nn.Sequential(
             nn.Conv1d(1, 32, kernel_size=7, stride=1, padding=3),  # (B, 32, 1024)
+            nn.BatchNorm1d(32),
             nn.ReLU(),
+            nn.Dropout1d(0.2),
             nn.MaxPool1d(2),  # (B, 32, 512)
             nn.Conv1d(32, 64, kernel_size=5, stride=1, padding=2),  # (B, 64, 512)
+            nn.BatchNorm1d(64),
             nn.ReLU(),
+            nn.Dropout1d(0.2),
             nn.MaxPool1d(2),  # (B, 64, 256)
             nn.Conv1d(64, 128, kernel_size=3, stride=1, padding=1),  # (B, 128, 256)
+            nn.BatchNorm1d(128),
             nn.ReLU(),
+            nn.Dropout1d(0.2),
             nn.MaxPool1d(2),  # (B, 128, 128)
         )
-        self.fc1 = nn.Linear(128 * 128, 256)
-        self.fc2 = nn.Linear(256, 128)
-        self.fc_out = nn.Linear(128, num_classes)
+        # Reduce the size of fully connected layers significantly
+        self.fc1 = nn.Linear(128 * 128, 512)  # Reduced from 256
+        self.fc2 = nn.Linear(512, 256)        # Reduced from 128
+        self.fc_out = nn.Linear(256, num_classes)
+        self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, flux):
         # flux: (B, 1024)
         x = flux.unsqueeze(1)  # (B, 1, 1024)
         x = self.cnn(x)        # (B, 128, 128)
         x = x.view(x.size(0), -1)  # (B, 128*128)
-        x = F.relu(self.fc1(x))    # (B, 256)
-        x = F.relu(self.fc2(x))    # (B, 128)
+        x = F.relu(self.fc1(x))    # (B, 512)
+        x = self.dropout(x)        # Add dropout
+        x = F.relu(self.fc2(x))    # (B, 256)
+        x = self.dropout(x)        # Add dropout
         logits = self.fc_out(x)    # (B, num_classes)
         return logits
 
@@ -140,7 +150,7 @@ class OversampledAugmentedDataset(Dataset):
     - Applies noise augmentation on-the-fly, with stddev depending on oversample amount.
     - Shuffles indices each epoch if DataLoader(shuffle=True) is used.
     """
-    def __init__(self, images, labels, stddev_low=0.03, stddev_high=0.05, seed=None):
+    def __init__(self, images, labels, stddev_low=0.01, stddev_high=0.02, seed=None):  # Reduced noise
         self.images = images if isinstance(images, np.ndarray) else images.numpy()
         self.labels = labels if isinstance(labels, np.ndarray) else labels.numpy()
         self.stddev_low = stddev_low
@@ -218,6 +228,61 @@ def load_datasets():
 
     return train_loader, test_loader, train_labels_mapped, test_labels_mapped, idx_to_label
 
+def cleanup_old_checkpoints(checkpoint_dir, keep_last=5):
+    """Keep only the last N checkpoints to save disk space"""
+    if not os.path.exists(checkpoint_dir):
+        return
+
+    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.startswith('checkpoint_epoch_')]
+    if len(checkpoint_files) <= keep_last:
+        return
+
+    # Sort by epoch number and keep only the latest ones
+    checkpoint_files.sort(key=lambda x: int(x.split('_')[-1].split('.')[0]))
+    files_to_remove = checkpoint_files[:-keep_last]
+
+    for file_to_remove in files_to_remove:
+        file_path = os.path.join(checkpoint_dir, file_to_remove)
+        os.remove(file_path)
+        print(f"Removed old checkpoint: {file_to_remove}")
+
+
+def load_latest_checkpoint(model, optimizer, scheduler, checkpoint_dir):
+    """Load the latest checkpoint if available"""
+    if not os.path.exists(checkpoint_dir):
+        return 0, float('inf'), 0  # start_epoch, best_val_loss, patience_counter
+
+    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.startswith('checkpoint_epoch_')]
+    if not checkpoint_files:
+        return 0, float('inf'), 0
+
+    # Find the latest checkpoint
+    try:
+        latest_checkpoint = max(checkpoint_files, key=lambda x: int(x.split('_')[-1].split('.')[0]))
+        checkpoint_path = os.path.join(checkpoint_dir, latest_checkpoint)
+
+        print(f"Loading checkpoint from: {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+        start_epoch = checkpoint['epoch'] + 1
+        best_val_loss = checkpoint['best_val_loss']
+        patience_counter = checkpoint['patience_counter']
+
+        print(f"Resuming from epoch {start_epoch}")
+        print(f"Best validation loss so far: {best_val_loss:.4f}")
+        print(f"Patience counter: {patience_counter}")
+
+        return start_epoch, best_val_loss, patience_counter
+
+    except Exception as e:
+        print(f"Could not load checkpoint: {e}")
+        print("Starting training from scratch.")
+        return 0, float('inf'), 0
+
 
 def train_loop():
     num_epochs = 1000  # Train for 1000 epochs
@@ -230,22 +295,48 @@ def train_loop():
     num_classes = len(idx_to_label)
     print(f"Number of classes for model: {num_classes} (max label: {max(idx_to_label.keys())})")
 
-    # Model setup
-    model = CNNSpectraClassifier(num_classes=num_classes).to(device)
+    # Model setup with dropout
+    model = CNNSpectraClassifier(num_classes=num_classes, dropout_rate=0.5).to(device)
     save_path = "cnn_spectra_model.pth"
-    if os.path.exists(save_path):
-        model.load_state_dict(torch.load(save_path, map_location=device))
-        print(f"Loaded model weights from {save_path}, continuing training.")
-    else:
-        print("No existing model checkpoint found. Training from scratch.")
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    checkpoint_dir = "checkpoints"
+
+    # Create checkpoint directory if it doesn't exist
+    if not os.path.exists(checkpoint_dir):
+        os.makedirs(checkpoint_dir)
+
+    # Try to load existing model, but handle errors gracefully
+    try:
+        if os.path.exists(save_path) and os.path.getsize(save_path) > 0:
+            model.load_state_dict(torch.load(save_path, map_location=device))
+            print(f"Loaded model weights from {save_path}, continuing training.")
+        else:
+            print("No existing model checkpoint found. Training from scratch.")
+    except Exception as e:
+        print(f"Could not load existing model: {e}")
+        print("Starting training from scratch.")
+        # Remove corrupted file if it exists
+        if os.path.exists(save_path):
+            os.remove(save_path)
+
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-4)  # Add weight decay
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20, verbose=True)
     criterion = nn.CrossEntropyLoss()
+
+    # Early stopping variables
+    best_val_loss = float('inf')
+    patience = 30
+    patience_counter = 0
+    best_epoch = 0
 
     print("Starting training loop...")
     t1 = time.time()
     test_accs = []
+    val_losses = []
 
-    for epoch in range(num_epochs):
+    # Load latest checkpoint if available
+    start_epoch, best_val_loss, patience_counter = load_latest_checkpoint(model, optimizer, scheduler, checkpoint_dir)
+
+    for epoch in range(start_epoch, num_epochs):
         model.train()
         epoch_loss = 0.0
         epoch_correct = 0
@@ -283,33 +374,77 @@ def train_loop():
         avg_loss = epoch_loss / len(train_loader)
         train_acc = epoch_correct / epoch_total
 
-        # Print progress every 10 epochs
-        if epoch % 10 == 0:
-            print(f"Epoch {epoch}, Avg Loss: {avg_loss:.4f}, Training accuracy: {train_acc:.4f}")
+        # Evaluate on validation set every epoch
+        model.eval()
+        val_loss = 0.0
+        val_correct = 0
+        val_total = 0
+        with torch.no_grad():
+            for test_xs, test_ys in test_loader:
+                test_xs, test_ys = test_xs.to(device), test_ys.to(device)
+                test_logits = model(test_xs)
+                val_loss += criterion(test_logits, test_ys).item()
+                preds = torch.argmax(test_logits, 1)
+                val_correct += preds.eq(test_ys).sum().item()
+                val_total += test_ys.size(0)
 
-        # Evaluate on test set every 50 epochs
-        if epoch % 50 == 0:
-            model.eval()
-            with torch.no_grad():
-                all_preds = []
-                all_true = []
-                for test_xs, test_ys in test_loader:
-                    test_xs, test_ys = test_xs.to(device), test_ys.to(device)
-                    test_logits = model(test_xs)
-                    preds = torch.argmax(test_logits, 1)
-                    all_preds.append(preds.cpu().numpy())
-                    all_true.append(test_ys.cpu().numpy())
-                all_preds = np.concatenate(all_preds)
-                all_true = np.concatenate(all_true)
-                test_acc = np.mean(all_preds == all_true)
-                print(f"Test accuracy: {test_acc:.4f}")
-                test_accs.append(test_acc)
-            model.train()
+        avg_val_loss = val_loss / len(test_loader)
+        val_acc = val_correct / val_total
+        val_losses.append(avg_val_loss)
+
+        # Learning rate scheduling
+        scheduler.step(avg_val_loss)
+
+        # Early stopping check
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            best_epoch = epoch
+            patience_counter = 0
+            # Save best model
+            torch.save(model.state_dict(), save_path)
+            print(f"New best model saved at epoch {epoch} with validation loss: {best_val_loss:.4f}")
+        else:
+            patience_counter += 1
+
+        # Print progress and save checkpoint every 10 epochs
+        if epoch % 10 == 0:
+            print(f"Epoch {epoch}, Train Loss: {avg_loss:.4f}, Train Acc: {train_acc:.4f}, Val Loss: {avg_val_loss:.4f}, Val Acc: {val_acc:.4f}, LR: {optimizer.param_groups[0]['lr']:.2e}")
+
+            # Save checkpoint every 10 epochs
+            checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch}.pth")
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'scheduler_state_dict': scheduler.state_dict(),
+                'train_loss': avg_loss,
+                'val_loss': avg_val_loss,
+                'train_acc': train_acc,
+                'val_acc': val_acc,
+                'best_val_loss': best_val_loss,
+                'patience_counter': patience_counter,
+                'learning_rate': optimizer.param_groups[0]['lr']
+            }, checkpoint_path)
+            print(f"Checkpoint saved: {checkpoint_path}")
+
+            # Clean up old checkpoints (keep last 5)
+            cleanup_old_checkpoints(checkpoint_dir, keep_last=5)
+
+        # Early stopping
+        if patience_counter >= patience:
+            print(f"Early stopping triggered at epoch {epoch}. Best validation loss was {best_val_loss:.4f} at epoch {best_epoch}")
+            break
+
+        model.train()
 
     t2 = time.time()
     print(f"Training complete. Time spent: {t2-t1:.2f} seconds.")
+    print(f"Best validation loss: {best_val_loss:.4f} at epoch {best_epoch}")
 
-    # Save the model
+    # Load best model
+    model.load_state_dict(torch.load(save_path, map_location=device))
+
+    # Save the final model
     torch.save(model.state_dict(), save_path)
     print(f"Model saved to {save_path}")
 
