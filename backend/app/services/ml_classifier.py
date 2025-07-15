@@ -175,6 +175,15 @@ class MLClassifier:
         logger.debug(f"Called save_model with path: {model_path}")
         pass
 
+    def _mock_classification_response(self, processed_data, model_path):
+        """Return a mock classification response when model is not available"""
+        logger.warning("Returning mock classification response")
+        redshift = processed_data.get('redshift', 0.0)
+        return {
+            'best_matches': [],
+            'best_match': {},
+            'reliable_matches': False
+        }
 
 def _interpolate_to_1024(arr):
     arr = np.asarray(arr)

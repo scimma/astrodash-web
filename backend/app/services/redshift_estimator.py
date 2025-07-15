@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.signal import argrelmax
-from scipy.fft import fft
 from .astrodash_backend import mean_zero_spectra
 import logging
 from .utils import get_redshift_axis
@@ -22,10 +21,10 @@ def calc_redshift_from_crosscorr(crossCorr, nw, dwlog):
 
 def cross_correlation(inputFlux, tempFlux, nw, tempMinMaxIndex):
     # Both inputFlux and tempFlux should be mean-zeroed and apodized
-    inputfourier = fft(inputFlux)
-    tempfourier = fft(tempFlux)
+    inputfourier = np.fft.fft(inputFlux)
+    tempfourier = np.fft.fft(tempFlux)
     product = inputfourier * np.conj(tempfourier)
-    xCorr = fft(product)
+    xCorr = np.fft.fft(product)
     rmsInput = np.std(inputfourier)
     rmsTemp = np.std(tempfourier)
     xCorrNorm = (1. / (nw * rmsInput * rmsTemp)) * xCorr

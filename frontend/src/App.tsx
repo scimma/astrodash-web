@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { createTheme, ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import { Global } from '@emotion/react';
 
 import LandingPage from './components/LandingPage';
 import SupernovaClassifier from './components/SupernovaClassifier';
@@ -49,7 +50,18 @@ function App() {
 
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline /> {/* CssBaseline handles baseline styles and adapts to theme.palette.mode */}
+      <CssBaseline />
+      <Global
+        styles={`
+          body {
+            background: url('/earth_horizon.png') no-repeat center center fixed;
+            background-size: cover;
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+          }
+        `}
+      />
       <Router>
         <Routes>
           <Route path="/" element={<LandingPage />} />

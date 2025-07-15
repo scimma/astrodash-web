@@ -6,7 +6,8 @@ import os
 import sys
 import json
 from collections import OrderedDict
-from urllib.request import urlopen, URLError
+from urllib.request import urlopen
+from urllib.error import URLError
 from .astrodash_backend import (
     get_training_parameters, AgeBinning, BestTypesListSingleRedshift, LoadInputSpectra,
     classification_split, combined_prob, RlapCalc, normalise_spectrum
@@ -62,10 +63,17 @@ class SpectrumProcessor:
         try:
             with fits.open(file) as hdul:
                 data = None
-                for hdu in hdul:
-                    if hdu.data is not None and ('wavelength' in hdu.data.names or 'WAVE' in hdu.data.names):
-                        data = hdu.data
-                        break
+                for hdu in hdul:  # type: ignore
+                    # Check if this is a table HDU with data
+                    try:
+                        if hdu.data is not None and hasattr(hdu.data, 'names'):  # type: ignore
+                            # Check if it's a table with column names
+                            if 'wavelength' in hdu.data.names or 'WAVE' in hdu.data.names:  # type: ignore
+                                data = hdu.data  # type: ignore
+                                break
+                    except AttributeError:
+                        # Skip HDUs that don't have data or names
+                        continue
                 if data is None:
                     logger.error("No suitable data HDU found in FITS file.")
                     raise ValueError("No suitable data HDU found in FITS file.")

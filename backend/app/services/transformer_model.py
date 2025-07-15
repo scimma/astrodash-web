@@ -4,7 +4,7 @@ from torch.nn import functional as F
 import math
 
 
-########### simple MLPs ###############
+#simple MLPs
 class singlelayerMLP(nn.Module):
     def __init__(self, in_dim, out_dim):
         super(singlelayerMLP, self).__init__()
@@ -33,8 +33,8 @@ class MLP(nn.Module):
         return self.mlp(x)
 
 
-############ Transformer use ##################
-################# positional encoding ###################
+# Transformer use
+#positional encoding
 
 class learnable_fourier_encoding(nn.Module):
     def __init__(self, dim = 64):
@@ -120,7 +120,7 @@ class RelativePosition(nn.Module):
 
         return embeddings
 
-######################### attention blocks ######################
+# attention blocks
 
 class MultiHeadAttentionLayer_relative(nn.Module):
     def __init__(self, hid_dim, n_heads, dropout, device):
@@ -256,7 +256,7 @@ class TransformerBlock(nn.Module):
 
         return x
 
-########### image use ############
+# image use
 class PatchEmbed(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, dim=768):
         super().__init__()

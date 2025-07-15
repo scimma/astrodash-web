@@ -6,7 +6,6 @@ import logging
 from astropy.time import Time
 from scipy.signal import medfilt, argrelmax
 from scipy.interpolate import splrep, splev
-from scipy.fft import fft
 from scipy.stats import chisquare, pearsonr
 from collections import OrderedDict
 from urllib.error import URLError
@@ -355,10 +354,10 @@ class RlapCalc:
 
     def _cross_correlation(self, templateFlux, templateMinMaxIndex):
         templateFlux = mean_zero_spectra(templateFlux, templateMinMaxIndex[0], templateMinMaxIndex[1], self.nw)
-        inputfourier = fft(self.inputFlux)
-        tempfourier = fft(templateFlux)
+        inputfourier = np.fft.fft(self.inputFlux)
+        tempfourier = np.fft.fft(templateFlux)
         product = inputfourier * np.conj(tempfourier)
-        xCorr = fft(product)
+        xCorr = np.fft.fft(product)
         rmsInput = np.std(inputfourier)
         rmsTemp = np.std(tempfourier)
         xCorrNorm = (1. / (self.nw * rmsInput * rmsTemp)) * xCorr

@@ -10,4 +10,4 @@ import 'swagger-ui-react/swagger-ui.css';
 
 Use the interactive Swagger UI below to explore and test all Astrodash API endpoints.
 
-<SwaggerUI url="/openapi.json" />
+<SwaggerUI url="http://localhost:5000/openapi.json" />

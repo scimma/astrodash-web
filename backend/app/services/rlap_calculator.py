@@ -1,6 +1,5 @@
 import numpy as np
 from scipy.signal import argrelmax
-from scipy.fft import fft
 from .astrodash_backend import mean_zero_spectra, get_training_parameters
 from .redshift_estimator import get_median_redshift
 from .utils import get_nonzero_minmax, get_redshift_axis
@@ -26,10 +25,10 @@ class RlapCalculator:
 
     def _cross_correlation(self, templateFlux, templateMinMaxIndex):
         templateFlux = mean_zero_spectra(templateFlux, templateMinMaxIndex[0], templateMinMaxIndex[1], self.nw)
-        inputfourier = fft(self.inputFlux)
-        tempfourier = fft(templateFlux)
+        inputfourier = np.fft.fft(self.inputFlux)
+        tempfourier = np.fft.fft(templateFlux)
         product = inputfourier * np.conj(tempfourier)
-        xCorr = fft(product)
+        xCorr = np.fft.fft(product)
         rmsInput = np.std(inputfourier)
         rmsTemp = np.std(tempfourier)
         xCorrNorm = (1. / (self.nw * rmsInput * rmsTemp)) * xCorr

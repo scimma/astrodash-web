@@ -84,7 +84,7 @@ def main():
     parser.add_argument('--model_dir', type=str, default='zeroZ', help='Model subdirectory to convert (zeroZ or agnosticZ)')
     args = parser.parse_args()
 
-    base_path = os.path.join(os.path.dirname(__file__), '..', 'astrodash_data', 'models_v06', 'models', args.model_dir)
+    base_path = os.path.join(os.path.dirname(__file__), '..', 'astrodash_models', args.model_dir)
     tf_model_path = os.path.join(base_path, 'tensorflow_model.ckpt')
     pytorch_model_path = os.path.join(base_path, 'pytorch_model.pth')
     params_path = os.path.join(base_path, 'training_params.pickle')
@@ -104,26 +104,24 @@ def main():
     reader = tf.compat.v1.train.NewCheckpointReader(tf_model_path)
     var_to_shape_map = reader.get_variable_to_shape_map()
 
-    # Determine n_types from checkpoint or parameter file
-    # Special case: agnosticZ is known to have 306 outputs
-    if args.model_dir == 'agnosticZ':
-        n_types = 306
-        print(f"[INFO] Forcing n_types=306 for agnosticZ. Downstream code should use only the first len(typeNamesList) outputs for user-facing results, as in legacy AstroDash.")
+    print("Checkpoint variable shapes:")
+    for k, v in var_to_shape_map.items():
+        print(f"{k}: {v}")
+
+    # Always determine n_types from checkpoint: find all variables with shape (1024, N) and use the largest N
+    max_n_types = 0
+    for k, v in var_to_shape_map.items():
+        if isinstance(v, (tuple, list)) and len(v) == 2 and v[0] == 1024:
+            if v[1] > max_n_types:
+                max_n_types = v[1]
+    if max_n_types > 0:
+        n_types = max_n_types
+        print(f"[INFO] Forcing n_types={n_types} to match checkpoint output size. Downstream code should use only the first len(typeNamesList) outputs for user-facing results, as in legacy AstroDash.")
+        if n_types != pars['nTypes']:
+            print(f"[WARNING] training_params.pickle nTypes={pars['nTypes']} but checkpoint output is {n_types}. This is expected for legacy models.")
     else:
-        # Find all variables with shape (1024, N) and use the largest N
-        max_n_types = 0
-        for k, v in var_to_shape_map.items():
-            if isinstance(v, np.ndarray) and v.ndim == 2 and v.shape[0] == 1024:
-                if v.shape[1] > max_n_types:
-                    max_n_types = v.shape[1]
-        if max_n_types > 0:
-            n_types = max_n_types
-            print(f"[INFO] Forcing n_types={n_types} to match checkpoint output size. Downstream code should use only the first len(typeNamesList) outputs for user-facing results, as in legacy AstroDash.")
-            if n_types != pars['nTypes']:
-                print(f"[WARNING] training_params.pickle nTypes={pars['nTypes']} but checkpoint output is {n_types}. This is expected for legacy models.")
-        else:
-            n_types = pars['nTypes']
-            print(f"[INFO] Using n_types={n_types} from parameter file (could not infer from checkpoint)")
+        n_types = pars['nTypes']
+        print(f"[INFO] Using n_types={n_types} from parameter file (could not infer from checkpoint)")
 
     # Filter out optimizer variables and get only the main weights/biases
     main_vars = []
@@ -143,6 +141,9 @@ def main():
         for i, (k, v) in enumerate(vars_list):
             if v.shape == shape:
                 return v
+        print("Available shapes in checkpoint:")
+        for i, (k, v) in enumerate(vars_list):
+            print(f"{k}: {v.shape}")
         raise ValueError(f"No variable with shape {shape}")
 
     # Assign variables to PyTorch model using shape-based mapping

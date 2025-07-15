@@ -25,7 +25,11 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  IconButton as MuiIconButton
+  IconButton as MuiIconButton,
+  AppBar,
+  Toolbar,
+  Link as MuiLink,
+  Fade
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
@@ -40,6 +44,47 @@ import AnalysisOptionPanel from './AnalysisOptionPanel';
 import CloseIcon from '@mui/icons-material/Close';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ModelType } from './ModelSelectionDialog';
+import { styled } from '@mui/material/styles';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import StarIcon from '@mui/icons-material/Star';
+import WhatshotIcon from '@mui/icons-material/Whatshot';
+import LensBlurIcon from '@mui/icons-material/LensBlur';
+import { keyframes } from '@mui/system';
+
+// Spacey card style
+const SpaceCard = styled(Paper)(({ theme }) => ({
+  background: 'rgba(30,34,60,0.88)',
+  borderRadius: 14,
+  boxShadow: '0 2px 8px 0 rgba(80,120,255,0.10)',
+  border: '1.5px solid rgba(120,80,200,0.12)',
+  backdropFilter: 'blur(2px)',
+  padding: theme.spacing(3, 3), // 24px top/bottom, 24px left/right
+  marginBottom: theme.spacing(3),
+  position: 'relative',
+  overflow: 'hidden',
+  [theme.breakpoints.down('sm')]: {
+    padding: theme.spacing(2, 1.5),
+  },
+}));
+
+const SpaceSectionHeader = styled(Typography)(({ theme }) => ({
+  fontWeight: 600,
+  fontSize: '1.5rem',
+  letterSpacing: '0.04em',
+  color: '#b3baff',
+  textShadow: '0 2px 12px rgba(80,120,255,0.18)',
+  marginBottom: theme.spacing(2.5),
+  marginTop: theme.spacing(1.5),
+  paddingLeft: theme.spacing(0.5),
+}));
+
+const SpaceyLabel = styled(Typography)(({ theme }) => ({
+  fontWeight: 500,
+  fontSize: '1rem',
+  color: '#b0b8c9',
+  marginBottom: theme.spacing(1.2),
+  marginTop: theme.spacing(0.5),
+}));
 
 interface SupernovaClassifierProps {
   toggleColorMode: () => void;
@@ -151,6 +196,14 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
 
   // Add state for customizing plot
   const [customizeOpen, setCustomizeOpen] = useState(false);
+
+  // Add pulse animation for the top Chip
+  const pulse = keyframes`
+  0% { box-shadow: 0 0 0 0 #ffe066cc; }
+  40% { box-shadow: 0 0 24px 12px #ffe066cc; }
+  80% { box-shadow: 0 0 12px 6px #ffe06688; }
+  100% { box-shadow: 0 0 0 0 #ffe06600; }
+`;
 
   // Helper function to interpolate template data to match spectrum wavelengths
   const interpolateTemplate = (template: TemplateSpectrum, spectrumWavelengths: number[]): (number | undefined)[] => {
@@ -584,26 +637,88 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     );
   };
 
+  // Add a helper for SN type chip color and icon
+  const snTypeChipProps = (type: string, isTop: boolean) => {
+    switch (type.toLowerCase()) {
+      case 'ia':
+        return { color: '#ffd700', icon: <StarIcon sx={{ fontSize: 20 }} />, label: 'Ia' };
+      case 'ib/c':
+        return { color: '#ff7043', icon: <WhatshotIcon sx={{ fontSize: 20 }} />, label: 'Ib/c' };
+      case 'ii':
+        return { color: '#64b5f6', icon: <LensBlurIcon sx={{ fontSize: 20 }} />, label: 'II' };
+      default:
+        return { color: '#b3baff', icon: <StarIcon sx={{ fontSize: 20 }} />, label: type };
+    }
+  };
+
+  // In the Best Matches section, add pulse animation to the top Chip when bestMatches changes
+  const [pulseKey, setPulseKey] = React.useState(0);
+  React.useEffect(() => {
+    if (bestMatches.length > 0) {
+      setPulseKey((k) => k + 1);
+    }
+  }, [bestMatches]);
+
   return (
-    <Container maxWidth="xl" sx={{ py: 2 }}>
-      <Box display="flex" alignItems="center" mb={2}>
-        <Button variant="outlined" color="primary" onClick={() => navigate('/')}>Back</Button>
-        <Typography variant="h4" component="h1" ml={2} sx={{ flexGrow: 1 }}>
-          Supernova Classifier
-        </Typography>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {/* Model indicator */}
-          <Chip
-            label={`${selectedModel === 'transformer' ? 'Transformer' : 'Dash'} Model`}
-            color={selectedModel === 'transformer' ? 'warning' : 'success'}
-            variant="outlined"
-            size="small"
-          />
-          <IconButton onClick={toggleColorMode} color="inherit">
-            {currentMode === 'dark' ? <Brightness7Icon /> : <Brightness4Icon />}
+    <Container maxWidth="xl" sx={{ py: 2, mt: 2 }}>
+      {/* Header */}
+      <AppBar position="static" elevation={0} sx={{
+        background: 'rgba(24, 28, 48, 0.55)',
+        boxShadow: '0 8px 32px 0 rgba(80,120,255,0.18)',
+        border: 'none',
+        backdropFilter: 'blur(12px) saturate(1.2)',
+        zIndex: 1300,
+        left: 0,
+        right: 0,
+        top: 0,
+        px: 0,
+        mb: 4,
+      }}>
+        <Toolbar sx={{ minHeight: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', px: 0 }}>
+          {/* Floating back button */}
+          <IconButton onClick={() => navigate('/')} color="inherit" sx={{
+            position: 'absolute',
+            left: 24,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'rgba(40, 44, 80, 0.7)',
+            boxShadow: '0 2px 8px 0 rgba(80,120,255,0.18)',
+            borderRadius: '50%',
+            p: 1.2,
+            '&:hover': { background: 'rgba(80,120,255,0.18)' },
+          }}>
+            <ArrowBackIcon sx={{ fontSize: 28, color: '#b3baff' }} />
           </IconButton>
-        </Box>
-      </Box>
+          {/* Glowing Astrodash icon */}
+          <Box sx={{
+            width: 38,
+            height: 38,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle at 60% 40%, #a18cd1 0%, #fbc2eb 100%)',
+            boxShadow: '0 0 16px 4px #a18cd1, 0 0 32px 8px #fbc2eb44',
+            display: 'inline-block',
+            mr: 2,
+          }} />
+          {/* Centered cosmic-gradient title */}
+          <Typography
+            variant="h5"
+            sx={{
+              fontWeight: 800,
+              letterSpacing: '0.08em',
+              background: 'linear-gradient(90deg, #b3baff 0%, #fbc2eb 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              textShadow: '0 2px 16px #2a2a4a',
+              mx: 2,
+              textAlign: 'center',
+              flex: 1,
+            }}
+          >
+            Astrodash Supernova Classifier
+          </Typography>
+        </Toolbar>
+      </AppBar>
+
       {/* Error Snackbar */}
       <Snackbar open={errorOpen} autoHideDuration={8000} onClose={() => setErrorOpen(false)} anchorOrigin={{ vertical: 'top', horizontal: 'center' }}>
         <Alert onClose={() => setErrorOpen(false)} severity="error" sx={{ width: '100%' }} variant="filled">
@@ -611,11 +726,12 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
         </Alert>
       </Snackbar>
 
+      {/* Update the main Grid layout for responsiveness */}
       <Grid container spacing={2}>
         {/* Left Panel */}
-        <Grid item xs={3}>
-          <Paper sx={{ p: 2, mb: 2 }}>
-            <Typography variant="h6" gutterBottom>Select Spectrum</Typography>
+        <Grid item xs={12} md={3}>
+          <SpaceCard>
+            <SpaceSectionHeader>Select Spectrum</SpaceSectionHeader>
 
             {/* Add OSC Reference Input */}
             <Box sx={{ mb: 2 }}>
@@ -645,7 +761,23 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
               />
               <Box sx={{ display: 'flex', gap: 1 }}>
                 <label htmlFor="file-input">
-                  <Button variant="contained" component="span" fullWidth>
+                  <Button
+                    variant="contained"
+                    component="span"
+                    fullWidth
+                    sx={{
+                      transition: 'transform 0.15s, box-shadow 0.15s',
+                      boxShadow: '0 2px 8px 0 #90caf9aa',
+                      '&:hover': {
+                        transform: 'scale(1.04)',
+                        boxShadow: '0 4px 16px 0 #90caf9cc',
+                      },
+                      '&:active': {
+                        transform: 'scale(0.98)',
+                        boxShadow: '0 1px 4px 0 #90caf988',
+                      },
+                    }}
+                  >
                     Browse
                   </Button>
                 </label>
@@ -653,6 +785,18 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                   variant="outlined"
                   onClick={handleClear}
                   disabled={!selectedFile && !oscRef}
+                  sx={{
+                    transition: 'transform 0.15s, box-shadow 0.15s',
+                    boxShadow: '0 2px 8px 0 #b3baff55',
+                    '&:hover': {
+                      transform: 'scale(1.04)',
+                      boxShadow: '0 4px 16px 0 #b3baff99',
+                    },
+                    '&:active': {
+                      transform: 'scale(0.98)',
+                      boxShadow: '0 1px 4px 0 #b3baff66',
+                    },
+                  }}
                 >
                   Clear
                 </Button>
@@ -661,10 +805,10 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                 {fileName}
               </Typography>
             </Box>
-          </Paper>
+          </SpaceCard>
 
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>Priors</Typography>
+          <SpaceCard>
+            <SpaceSectionHeader>Priors</SpaceSectionHeader>
             <Box sx={{ mb: 2 }}>
               <FormControlLabel
                 control={
@@ -744,56 +888,75 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                 onClick={handleProcess}
                 disabled={loading || (!selectedFile && !oscRef)}
                 fullWidth
-                sx={{ py: 1.5 }}
+                sx={{
+                  py: 1.5,
+                  transition: 'transform 0.15s, box-shadow 0.15s',
+                  boxShadow: '0 2px 8px 0 #ffd70033',
+                  '&:hover': {
+                    transform: 'scale(1.04)',
+                    boxShadow: '0 4px 16px 0 #ffd70066',
+                  },
+                  '&:active': {
+                    transform: 'scale(0.98)',
+                    boxShadow: '0 1px 4px 0 #ffd70044',
+                  },
+                }}
               >
                 {loading ? 'Processing...' : 'Process Spectrum'}
               </Button>
             </Box>
-          </Paper>
+          </SpaceCard>
         </Grid>
 
         {/* Right Panel */}
-        <Grid item xs={9}>
+        <Grid item xs={12} md={9}>
           <Grid container spacing={2}>
             {/* Best Matches Section */}
             <Grid item xs={12}>
-              <Paper sx={{ p: 2 }}>
-                <Typography variant="h6" gutterBottom>Best Matches</Typography>
+              <SpaceCard>
+                <SpaceSectionHeader>Best Matches</SpaceSectionHeader>
                 <Box sx={{ display: 'flex', gap: 2 }}>
-                  <Box sx={{ width: '33%' }}>
-                    <List>
-                      {bestMatches.map((match, index) => (
-                        <ListItem key={index}>
-                          <ListItemText
-                            primary={`${match.type} (${match.age})`}
-                            secondary={`Prob: ${(match.probability * 100).toFixed(1)}%`}
-                          />
-                        </ListItem>
-                      ))}
-                    </List>
-                  </Box>
-                  <Box sx={{ width: '67%' }}>
-                    <Box sx={{ textAlign: 'center' }}>
-                      <Typography variant="h6" gutterBottom>Best Match</Typography>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-around' }}>
-                        <Box>
-                          <Typography>SN Type</Typography>
-                          <Typography variant="body2">{bestMatches[0]?.type || 'N/A'}</Typography>
-                        </Box>
-                        <Box>
-                          <Typography>Age Range</Typography>
-                          <Typography variant="body2">{bestMatches[0]?.age || 'N/A'}</Typography>
-                        </Box>
-                      </Box>
-                    </Box>
+                  <Box sx={{ width: '100%' }}>
+                    <Fade in={bestMatches.length > 0} timeout={600}>
+                      <List>
+                        {bestMatches.map((match, index) => {
+                          const isTop = index === 0;
+                          const { color: chipColor, label: chipLabel } = snTypeChipProps(match.type, isTop);
+                          return (
+                            <ListItem key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                              <Chip
+                                key={`top-chip-${pulseKey}`}
+                                label={chipLabel + (match.age ? ` (${match.age})` : '')}
+                                sx={{
+                                  background: isTop ? `linear-gradient(90deg, ${chipColor} 60%, #fffde4 100%)` : chipColor,
+                                  color: isTop ? '#222' : '#fff',
+                                  fontWeight: isTop ? 700 : 500,
+                                  fontSize: { xs: '0.95rem', sm: isTop ? '1.1rem' : '1rem' },
+                                  px: { xs: 1.2, sm: isTop ? 2 : 1.2 },
+                                  py: { xs: 0.7, sm: isTop ? 1.2 : 0.7 },
+                                  minWidth: { xs: 60, sm: 80 },
+                                  boxShadow: isTop ? '0 0 16px 4px #ffe066cc' : 'none',
+                                  border: isTop ? '2px solid #ffd700' : 'none',
+                                  animation: isTop ? `${pulse} 1.8s` : undefined,
+                                  animationIterationCount: isTop ? 1 : undefined,
+                                }}
+                              />
+                              <Typography variant="body2" sx={{ color: '#b0b8c9', ml: 1 }}>
+                                Prob: {(match.probability * 100).toFixed(1)}%
+                              </Typography>
+                            </ListItem>
+                          );
+                        })}
+                      </List>
+                    </Fade>
                   </Box>
                 </Box>
-              </Paper>
+              </SpaceCard>
             </Grid>
 
             {/* Analysis Section */}
             <Grid item xs={12}>
-              <Paper sx={{ p: 2 }}>
+              <SpaceCard>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                   <Typography variant="h6">Analyse selection</Typography>
                   <Box sx={{ display: 'flex', gap: 1 }}>
@@ -816,7 +979,7 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
 
                 {/* Spectrum Plot Section */}
                 <Box>
-                  {spectrumData && (
+                  <Fade in={!!spectrumData} timeout={700}>
                     <div className="mt-8">
                       <h2 className="text-xl font-bold mb-4">Spectrum Plot</h2>
                       <div className="bg-white p-4 rounded-lg shadow">
@@ -915,9 +1078,9 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                         <GraphLegend />
                       </div>
                     </div>
-                  )}
+                  </Fade>
                 </Box>
-              </Paper>
+              </SpaceCard>
             </Grid>
           </Grid>
         </Grid>
@@ -1100,6 +1263,30 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Footer */}
+      <Box component="footer" sx={{
+        width: '100%',
+        background: 'rgba(20, 24, 40, 0.85)',
+        color: '#b3baff',
+        py: 1.2,
+        px: 2,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '1rem',
+        borderTop: '1.5px solid rgba(120,80,200,0.12)',
+      }}>
+        <MuiLink href="/docs" color="inherit" underline="hover" sx={{ mx: 1 }}>
+          Docs
+        </MuiLink>
+        |
+        <MuiLink href="https://github.com/astrodash/astrodash-api" color="inherit" underline="hover" sx={{ mx: 1 }}>
+          GitHub
+        </MuiLink>
+        |
+        <span style={{ opacity: 0.7, marginLeft: 8 }}>© {new Date().getFullYear()} Astrodash</span>
+      </Box>
     </Container>
   );
 };
