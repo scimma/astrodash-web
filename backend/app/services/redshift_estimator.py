@@ -1,13 +1,16 @@
 import numpy as np
 from scipy.signal import argrelmax
-from .astrodash_backend import mean_zero_spectra
 import logging
-from .utils import get_redshift_axis
 
 logger = logging.getLogger("redshift_estimator")
 
-def get_redshift_axis(nw, dwlog):
-    return get_redshift_axis(nw, dwlog)
+
+def mean_zero_spectra(flux, min_idx, max_idx, nw):
+    out = np.zeros(nw)
+    region = flux[min_idx:max_idx+1]
+    mean = np.mean(region) if len(region) > 0 else 0
+    out[min_idx:max_idx+1] = region - mean
+    return out
 
 def calc_redshift_from_crosscorr(crossCorr, nw, dwlog):
     # Find max peak while ignoring peaks that lead to negative redshifts

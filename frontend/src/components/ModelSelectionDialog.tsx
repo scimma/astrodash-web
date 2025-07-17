@@ -11,12 +11,15 @@ import {
   CardContent,
   CardActionArea,
   Chip,
+  TextField,
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import ScienceIcon from '@mui/icons-material/Science';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import { api } from '../services/api';
 
-export type ModelType = 'dash' | 'transformer';
+export type ModelType = 'dash' | 'transformer' | { user: string }; // user: model_id
 
 interface ModelSelectionDialogProps {
   open: boolean;
@@ -29,9 +32,47 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
   onClose,
   onModelSelect,
 }) => {
+  const [userModels, setUserModels] = React.useState<any[]>([]);
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadError, setUploadError] = React.useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = React.useState<any | null>(null);
+  const [file, setFile] = React.useState<File | null>(null);
+  const [classMapping, setClassMapping] = React.useState('');
+  const [inputShape, setInputShape] = React.useState('');
+
+  React.useEffect(() => {
+    // Fetch user models (stub for now)
+    api.getUserModels().then(setUserModels);
+  }, [uploadSuccess]);
+
   const handleModelSelect = (model: ModelType) => {
     onModelSelect(model);
     onClose();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+    }
+  };
+
+  const handleUpload = async () => {
+    setUploading(true);
+    setUploadError(null);
+    setUploadSuccess(null);
+    try {
+      const parsedClassMapping = JSON.parse(classMapping);
+      const parsedInputShape = JSON.parse(inputShape);
+      const result = await api.uploadModel({ file: file!, classMapping: parsedClassMapping, inputShape: parsedInputShape });
+      setUploadSuccess(result);
+      setFile(null);
+      setClassMapping('');
+      setInputShape('');
+    } catch (err: any) {
+      setUploadError(err?.response?.data?.message || err?.message || 'Upload failed');
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -154,6 +195,114 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
                   </Box>
                 </CardContent>
               </CardActionArea>
+            </Card>
+          </motion.div>
+
+          {/* User-uploaded Model Card */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            style={{ flex: 1 }}
+          >
+            <Card
+              sx={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                color: 'white',
+                height: '100%',
+                minWidth: 280,
+              }}
+            >
+              <CardContent sx={{ textAlign: 'center' }}>
+                <CloudUploadIcon sx={{ fontSize: 48, mb: 2, color: '#2196f3' }} />
+                <Typography variant="h5" component="h3" sx={{ mb: 1, fontWeight: 600 }}>
+                  Upload Your Model
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 2, opacity: 0.8 }}>
+                  Upload a PyTorch .pth/.pt file, class mapping, and input shape
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', mb: 1 }}>
+                  <Button
+                    variant="contained"
+                    component="label"
+                    sx={{ mb: 1, background: '#2196f3', color: 'white' }}
+                    startIcon={<CloudUploadIcon />}
+                  >
+                    {file ? file.name : 'Choose Model File'}
+                    <input
+                      type="file"
+                      accept=".pth,.pt"
+                      hidden
+                      onChange={handleFileChange}
+                    />
+                  </Button>
+                  <TextField
+                    label="Class Mapping (JSON)"
+                    value={classMapping}
+                    onChange={e => setClassMapping(e.target.value)}
+                    size="small"
+                    fullWidth
+                    multiline
+                    minRows={2}
+                    sx={{ background: 'rgba(255,255,255,0.08)', borderRadius: 1, input: { color: 'white' }, label: { color: 'white' } }}
+                  />
+                  <TextField
+                    label="Input Shape (JSON, e.g. [1,1,32,32])"
+                    value={inputShape}
+                    onChange={e => setInputShape(e.target.value)}
+                    size="small"
+                    fullWidth
+                    sx={{ background: 'rgba(255,255,255,0.08)', borderRadius: 1, input: { color: 'white' }, label: { color: 'white' } }}
+                  />
+                  <Button
+                    variant="outlined"
+                    color="primary"
+                    onClick={handleUpload}
+                    disabled={!file || !classMapping || !inputShape || uploading}
+                    sx={{ mt: 1 }}
+                  >
+                    {uploading ? 'Uploading...' : 'Upload Model'}
+                  </Button>
+                  {uploadError && <Typography color="error" sx={{ mt: 1 }}>{uploadError}</Typography>}
+                  {uploadSuccess && (
+                    <Box sx={{ mt: 1, color: '#90ee90', fontSize: 14 }}>
+                      Uploaded! Model ID: <b>{uploadSuccess.model_id}</b>
+                      <br />Output shape: {JSON.stringify(uploadSuccess.output_shape)}
+                      <br />Input shape: {JSON.stringify(uploadSuccess.input_shape)}
+                      <Button
+                        variant="contained"
+                        color="success"
+                        size="small"
+                        sx={{ mt: 1 }}
+                        onClick={() => handleModelSelect({ user: uploadSuccess.model_id })}
+                      >
+                        Use This Model
+                      </Button>
+                    </Box>
+                  )}
+                </Box>
+                {/* List of previously uploaded models (future: from backend) */}
+                {userModels.length > 0 && (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="subtitle2" sx={{ color: '#90caf9', mb: 1 }}>
+                      Your Uploaded Models
+                    </Typography>
+                    {userModels.map((model: any) => (
+                      <Button
+                        key={model.model_id}
+                        variant="outlined"
+                        color="info"
+                        size="small"
+                        sx={{ mb: 1, mr: 1 }}
+                        onClick={() => handleModelSelect({ user: model.model_id })}
+                      >
+                        {model.model_id}
+                      </Button>
+                    ))}
+                  </Box>
+                )}
+              </CardContent>
             </Card>
           </motion.div>
         </Box>

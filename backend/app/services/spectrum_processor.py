@@ -10,7 +10,7 @@ from urllib.request import urlopen
 from urllib.error import URLError
 from .astrodash_backend import (
     get_training_parameters, AgeBinning, BestTypesListSingleRedshift, LoadInputSpectra,
-    classification_split, combined_prob, RlapCalc, normalise_spectrum
+    classification_split, combined_prob, normalise_spectrum
 )
 import logging
 logger = logging.getLogger("spectrum_processor")
@@ -152,7 +152,7 @@ class SpectrumProcessor:
             logger.error(f"Error reading text file {filename}: {str(e)}")
             raise ValueError(f"Error reading text file: {str(e)}")
 
-    def read_osc_input(self, filename, template=False):
+    def read_osc_input(self, filename):
         osc_base_url = "https://api.astrocats.space/"
         obj_name = filename.split('-')[1]
         try:

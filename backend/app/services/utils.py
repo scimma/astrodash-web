@@ -77,14 +77,6 @@ def normalize_age_bin(age):
         return f"{int(match.group(1))} to {int(match.group(2))}"
     return age
 
-def get_redshift_axis(nw, dwlog):
-    """Return redshift axis array for given nw and dwlog."""
-    zAxisIndex = np.concatenate((np.arange(-nw // 2, 0), np.arange(0, nw // 2)))
-    zAxis = np.zeros(nw)
-    zAxis[:nw // 2 - 1] = -(np.exp(np.abs(zAxisIndex[:nw // 2 - 1]) * dwlog) - 1)
-    zAxis[nw // 2:] = (np.exp(np.abs(zAxisIndex[nw // 2:]) * dwlog) - 1)
-    zAxis = zAxis[::-1]
-    return zAxis
 
 def sanitize_for_json(obj, _path="root"):
     """Sanitizes for JSON format (deals with inf values, numpy types, etc.)"""
@@ -108,3 +100,12 @@ def sanitize_for_json(obj, _path="root"):
         return [sanitize_for_json(v, f"{_path}[{i}]") for i, v in enumerate(obj)]
     else:
         return obj
+
+def get_redshift_axis(nw, dwlog):
+    """Return redshift axis array for given nw and dwlog."""
+    zAxisIndex = np.concatenate((np.arange(-nw // 2, 0), np.arange(0, nw // 2)))
+    zAxis = np.zeros(nw)
+    zAxis[:nw // 2 - 1] = -(np.exp(np.abs(zAxisIndex[:nw // 2 - 1]) * dwlog) - 1)
+    zAxis[nw // 2:] = (np.exp(np.abs(zAxisIndex[nw // 2:]) * dwlog) - 1)
+    zAxis = zAxis[::-1]
+    return zAxis

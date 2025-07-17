@@ -181,6 +181,23 @@ class Api {
       throw error;
     }
   }
+
+  async uploadModel({ file, classMapping, inputShape }: { file: File, classMapping: object, inputShape: number[] }) {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('class_mapping', JSON.stringify(classMapping));
+    formData.append('input_shape', JSON.stringify(inputShape));
+    const response = await axios.post(`${API_BASE_URL}/api/upload-model`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  }
+
+  async getUserModels(): Promise<any[]> {
+    // This should call a backend endpoint to list user-uploaded models
+    // For now, return an empty array (to be implemented in backend)
+    return [];
+  }
 }
 
 export const api = new Api();

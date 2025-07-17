@@ -50,8 +50,6 @@ class AstroDashPyTorchNet(nn.Module):
         return F.softmax(x, dim=1)
 
 
-# Core AstroDASH logic
-
 def get_training_parameters():
     """Load training parameters from the model directory"""
     services_dir = os.path.dirname(os.path.abspath(__file__))
@@ -131,8 +129,8 @@ def limit_wavelength_range(wave, flux, min_wave, max_wave):
         flux[max_idx:] = 0
     return flux
 
-
-class SpectrumProcessor:
+# Spectrum Processor strictly for Dash Model
+class SpectrumProcessorML:
     """Process spectrum data for classification"""
     def __init__(self, w0, w1, nw):
         self.w0 = w0
@@ -213,7 +211,7 @@ class LoadInputSpectra:
         )
         self.type_names_list = CreateLabels(n_types, min_age, max_age, age_bin_size, type_list).type_names_list()
         self.n_bins = len(self.type_names_list)
-        processor = SpectrumProcessor(w0, w1, self.nw)
+        processor = SpectrumProcessorML(w0, w1, self.nw)
         logger.info(f"Loading and processing input spectra. z={z}, smooth={smooth}, min_wave={min_wave}, max_wave={max_wave}")
         if isinstance(file_path_or_data, str):
             data = np.loadtxt(file_path_or_data)
@@ -334,125 +332,10 @@ def get_valid_sn_types_and_age_bins(npz_path):
     logger.info(f"Valid SN types and age bins loaded: {list(valid.keys())}")
     return valid
 
-def mean_zero_spectra(flux, min_idx, max_idx, nw):
-    out = np.zeros(nw)
-    region = flux[min_idx:max_idx+1]
-    mean = np.mean(region) if len(region) > 0 else 0
-    out[min_idx:max_idx+1] = region - mean
-    return out
-
-class RlapCalc:
-    def __init__(self, inputFlux, templateFluxes, templateNames, wave, inputMinMaxIndex, templateMinMaxIndexes):
-        self.templateFluxes = templateFluxes
-        self.templateNames = templateNames
-        self.wave = wave
-        pars = get_training_parameters()
-        w0, w1, self.nw = pars['w0'], pars['w1'], pars['nw']
-        self.inputFlux = mean_zero_spectra(inputFlux, inputMinMaxIndex[0], inputMinMaxIndex[1], self.nw)
-        self.templateMinMaxIndexes = templateMinMaxIndexes
-        self.dwlog = np.log(w1 / w0) / self.nw
-
-    def _cross_correlation(self, templateFlux, templateMinMaxIndex):
-        templateFlux = mean_zero_spectra(templateFlux, templateMinMaxIndex[0], templateMinMaxIndex[1], self.nw)
-        inputfourier = np.fft.fft(self.inputFlux)
-        tempfourier = np.fft.fft(templateFlux)
-        product = inputfourier * np.conj(tempfourier)
-        xCorr = np.fft.fft(product)
-        rmsInput = np.std(inputfourier)
-        rmsTemp = np.std(tempfourier)
-        xCorrNorm = (1. / (self.nw * rmsInput * rmsTemp)) * xCorr
-        rmsXCorr = np.std(product)
-        xCorrNormRearranged = np.concatenate((xCorrNorm[int(len(xCorrNorm) / 2):], xCorrNorm[0:int(len(xCorrNorm) / 2)]))
-        crossCorr = np.correlate(self.inputFlux, templateFlux, mode='full')[::-1][int(self.nw / 2):int(self.nw + self.nw / 2)] / max(np.correlate(self.inputFlux, templateFlux, mode='full'))
-        try:
-            deltapeak, h = self._get_peaks(crossCorr)[0]
-            shift = int(deltapeak - self.nw / 2)
-            autoCorr = np.correlate(templateFlux, templateFlux, mode='full')[::-1][int(self.nw / 2) - shift:int(self.nw + self.nw / 2) - shift] / max(np.correlate(templateFlux, templateFlux, mode='full'))
-            aRandomFunction = crossCorr - autoCorr
-            rmsA = np.std(aRandomFunction)
-        except IndexError as err:
-            logger.error(f"Error: Cross-correlation is zero, probably caused by empty spectrum. {err}")
-            rmsA = 1
-        return xCorr, rmsInput, rmsTemp, xCorrNorm, rmsXCorr, xCorrNormRearranged, rmsA
-
-    def _get_peaks(self, crosscorr):
-        peakindexes = argrelmax(crosscorr)[0]
-        ypeaks = [abs(crosscorr[i]) for i in peakindexes]
-        arr = list(zip(peakindexes, ypeaks))
-        arr.sort(key=lambda x: x[1], reverse=True)
-        return arr
-
-    def _calculate_r(self, crosscorr, rmsA):
-        peaks = self._get_peaks(crosscorr)
-        if len(peaks) < 2:
-            return 0, 0, 0
-        deltapeak1, h1 = peaks[0]
-        deltapeak2, h2 = peaks[1]
-        r = abs((h1 - rmsA) / (np.sqrt(2) * rmsA))
-        fom = (h1 - 0.05) ** 0.75 * (h1 / h2) if h2 != 0 else 0
-        return r, deltapeak1, fom
-
-    def get_redshift_axis(self, nw, dwlog):
-        zAxisIndex = np.concatenate((np.arange(-nw / 2, 0), np.arange(0, nw / 2)))
-        zAxis = np.zeros(nw)
-        zAxis[0:int(nw / 2 - 1)] = -(np.exp(abs(zAxisIndex[0:int(nw / 2 - 1)]) * dwlog) - 1)
-        zAxis[int(nw / 2):] = (np.exp(abs(zAxisIndex[int(nw / 2):]) * dwlog) - 1)
-        zAxis = zAxis[::-1]
-        return zAxis
-
-    def calculate_rlap(self, crosscorr, rmsAntisymmetric, templateFlux):
-        r, deltapeak, fom = self._calculate_r(crosscorr, rmsAntisymmetric)
-        shift = int(deltapeak - self.nw / 2)
-        iminindex, imaxindex = self.min_max_index(self.inputFlux)
-        tminindex, tmaxindex = self.min_max_index(templateFlux)
-        overlapminindex = int(max(iminindex + shift, tminindex))
-        overlapmaxindex = int(min(imaxindex - 1 + shift, tmaxindex - 1))
-        minWaveOverlap = self.wave[overlapminindex]
-        maxWaveOverlap = self.wave[overlapmaxindex]
-        lap = np.log(maxWaveOverlap / minWaveOverlap) if minWaveOverlap > 0 else 0
-        rlap = 5 * r * lap
-        fom = fom * lap
-        return r, lap, rlap, fom
-
-    def min_max_index(self, flux):
-        minindex, maxindex = (0, self.nw - 1)
-        zeros = np.where(flux == 0)[0]
-        j = 0
-        for i in zeros:
-            if (i != j):
-                break
-            j += 1
-            minindex = j
-        j = int(self.nw) - 1
-        for i in zeros[::-1]:
-            if (i != j):
-                break
-            j -= 1
-            maxindex = j
-        return minindex, maxindex
-
-    def rlap_score(self, tempIndex):
-        xcorr, rmsinput, rmstemp, xcorrnorm, rmsxcorr, xcorrnormRearranged, rmsA = self._cross_correlation(
-            self.templateFluxes[tempIndex].astype('float'), self.templateMinMaxIndexes[tempIndex])
-        crosscorr = xcorrnormRearranged
-        r, lap, rlap, fom = self.calculate_rlap(crosscorr, rmsA, self.templateFluxes[tempIndex])
-        return r, lap, rlap, fom
-
-    def rlap_label(self):
-        if not np.any(self.inputFlux):
-            return "No flux", True
-        self.zAxis = self.get_redshift_axis(self.nw, self.dwlog)
-        rlapList = []
-        for i in range(len(self.templateNames)):
-            r, lap, rlap, fom = self.rlap_score(tempIndex=i)
-            rlapList.append(rlap)
-        rlapMean = round(np.mean(rlapList), 2)
-        rlapLabel = str(rlapMean)
-        rlapWarning = rlapMean < 6
-        return rlapLabel, rlapWarning
 
 __all__ = [
     'get_training_parameters', 'BestTypesListSingleRedshift', 'LoadInputSpectra',
-    'classification_split', 'combined_prob', 'RlapCalc', 'get_median_redshift',
-    'catalogDict', 'read_osc_input', 'normalise_spectrum', 'AstroDashPyTorchNet'
+    'classification_split', 'combined_prob', 'RlapCalc', 'normalise_spectrum',
+    'AstroDashPyTorchNet', 'AgeBinning', 'CreateLabels', 'LoadInputSpectra',
+    'BestTypesListSingleRedshift', 'RlapCalc', 'normalise_spectrum', 'get_valid_sn_types_and_age_bins'
 ]

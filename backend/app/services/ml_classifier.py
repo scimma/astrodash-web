@@ -76,16 +76,6 @@ class MLClassifier:
                 logger.warning("No matches found. Returning mock classification.")
                 return {}
 
-            def normalize_age_bin(age):
-                # Convert various formats to 'N to M'
-                import re
-                age = age.replace('–', '-').replace('to', '-').replace('TO', '-').replace('To', '-')
-                age = age.replace(' ', '')
-                match = re.match(r'(-?\d+)-(-?\d+)', age)
-                if match:
-                    return f"{int(match.group(1))} to {int(match.group(2))}"
-                return age
-
             # RLap calculation using real template spectra
             logger.info("Calculating RLap score using real template spectra.")
             log_wave, input_flux_log, snTemplates, dwlog, nw, w0, w1 = prepare_log_wavelength_and_templates(processed_data)
@@ -167,14 +157,6 @@ class MLClassifier:
                 os.unlink(temp_file_path)
                 logger.debug(f"Temporary file deleted: {temp_file_path}")
 
-    def load_model(self, model_path):
-        logger.debug(f"Called load_model with path: {model_path}")
-        pass
-
-    def save_model(self, model_path):
-        logger.debug(f"Called save_model with path: {model_path}")
-        pass
-
     def _mock_classification_response(self, processed_data, model_path):
         """Return a mock classification response when model is not available"""
         logger.warning("Returning mock classification response")
@@ -184,6 +166,14 @@ class MLClassifier:
             'best_match': {},
             'reliable_matches': False
         }
+
+    def load_model_from_state_dict(self, state_dict, n_classes):
+        from app.services.astrodash_backend import AstroDashPyTorchNet
+        # Use im_width=32 as in the default model
+        model = AstroDashPyTorchNet(n_types=n_classes, im_width=32)
+        model.load_state_dict(state_dict)
+        model.eval()
+        return model
 
 def _interpolate_to_1024(arr):
     arr = np.asarray(arr)

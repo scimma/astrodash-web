@@ -943,6 +943,9 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                               />
                               <Typography variant="body2" sx={{ color: '#b0b8c9', ml: 1 }}>
                                 Prob: {(match.probability * 100).toFixed(1)}%
+                                {match.rlap !== undefined && match.rlap !== null &&
+                                  <> | RLAP: {match.rlap}</>
+                                }
                               </Typography>
                             </ListItem>
                           );

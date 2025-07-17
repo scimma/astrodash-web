@@ -9,12 +9,16 @@ import logging
 import zipfile
 import io
 import math
+import torch
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+import uuid
 
 from .services.spectrum_processor import SpectrumProcessor
 from .services.ml_classifier import MLClassifier, TransformerClassifier
 from .services.astrodash_backend import get_training_parameters, AgeBinning, load_template_spectrum, get_valid_sn_types_and_age_bins
 from .services.redshift_estimator import get_median_redshift
-from .services.utils import sanitize_for_json
+from .services.utils import sanitize_for_json, normalize_age_bin
 from app.services.rlap_calculator import calculate_rlap_with_redshift
 
 logging.basicConfig(
@@ -43,6 +47,107 @@ app.add_middleware(
 
 # Service Instantiation
 spectrum_processor = SpectrumProcessor()
+
+# Change user model directory to astrodash_models/user_uploaded
+ASTRODASH_MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', 'astrodash_models')
+USER_MODEL_DIR = os.path.join(ASTRODASH_MODELS_DIR, 'user_uploaded')
+os.makedirs(USER_MODEL_DIR, exist_ok=True)
+
+class ModelUploadResponse(BaseModel):
+    status: str
+    message: str
+    model_id: str | None = None
+    model_filename: str | None = None
+    class_mapping: dict | None = None
+    output_shape: list | None = None
+    input_shape: list | None = None
+
+@app.post("/api/upload-model", response_model=ModelUploadResponse)
+async def upload_model(
+    file: UploadFile = File(...),
+    class_mapping: str = Form(...),
+    input_shape: str = Form(...)
+):
+    # 1. Check file extension
+    if not (file.filename and (file.filename.endswith('.pth') or file.filename.endswith('.pt'))):
+        return JSONResponse(status_code=400, content={
+            "status": "error",
+            "message": "Only .pth or .pt files are allowed."
+        })
+    # 2. Parse class mapping
+    try:
+        class_map = json.loads(class_mapping)
+        if not isinstance(class_map, dict) or not class_map:
+            raise ValueError
+    except Exception:
+        return JSONResponse(status_code=400, content={
+            "status": "error",
+            "message": "Invalid class mapping. Must be a non-empty JSON object."
+        })
+    # 3. Parse input shape
+    try:
+        input_shape_list = json.loads(input_shape) if isinstance(input_shape, str) else input_shape
+        if (not isinstance(input_shape_list, list) or
+            not all(isinstance(x, int) and x > 0 for x in input_shape_list)):
+            raise ValueError
+    except Exception:
+        return JSONResponse(status_code=400, content={
+            "status": "error",
+            "message": "Invalid input shape. Must be a JSON list of positive integers, e.g., [1, 1, 32, 32]."
+        })
+    # 4. Assign a unique model_id
+    model_id = str(uuid.uuid4())
+    model_base = os.path.join(USER_MODEL_DIR, model_id)
+    model_path = model_base + '.pth'
+    # 5. Save model file (temporarily)
+    content = await file.read()
+    with open(model_path, 'wb') as f:
+        f.write(content)
+    # 6. Try to load model and check output shape
+    try:
+        import torch
+        # Load as TorchScript
+        model = torch.jit.load(model_path, map_location='cpu')
+        model.eval()
+        # Prepare dummy inputs matching the model's forward signature
+        # Assume input_shape_list is [1, 1024] for each input
+        dummy_wavelength = torch.randn(*input_shape_list)
+        dummy_flux = torch.randn(*input_shape_list)
+        dummy_redshift = torch.randn(1, 1)
+        with torch.no_grad():
+            output = model(dummy_wavelength, dummy_flux, dummy_redshift)
+        output_shape = list(output.shape)
+        n_classes = len(class_map)
+        if output_shape[-1] != n_classes:
+            os.remove(model_path)
+            return JSONResponse(status_code=400, content={
+                "status": "error",
+                "message": f"Model output shape {output_shape} does not match number of classes {n_classes}."
+            })
+    except Exception as e:
+        if os.path.exists(model_path):
+            os.remove(model_path)
+        logger.error(f"Model upload failed: {e}")
+        return JSONResponse(status_code=400, content={
+            "status": "error",
+            "message": f"Failed to load model: {str(e)}"
+        })
+    # 7. Save class mapping and input shape only if validation passed
+    mapping_path = model_base + '.classes.json'
+    with open(mapping_path, 'w') as f:
+        json.dump(class_map, f)
+    input_shape_path = model_base + '.input_shape.json'
+    with open(input_shape_path, 'w') as f:
+        json.dump(input_shape_list, f)
+    return {
+        "status": "success",
+        "message": "Model uploaded and validated successfully.",
+        "model_id": model_id,
+        "model_filename": os.path.basename(model_path),
+        "class_mapping": class_map,
+        "output_shape": output_shape,
+        "input_shape": input_shape_list
+    }
 
 def get_classifier(model_type: str):
     """Get the appropriate classifier based on model type"""
@@ -91,23 +196,20 @@ async def get_osc_references():
 @app.post("/process")
 async def process_spectrum(
     params: str = Form('{}'),
-    file: Optional[UploadFile] = File(None)
+    file: Optional[UploadFile] = File(None),
+    model_id: Optional[str] = Form(None)
 ):
-    # Get spectrum data
     try:
         logger.info("/process endpoint called")
         logger.info(f"Received params: {params}")
         logger.info(f"Received file: {file.filename if file else 'None'}")
-
         parsed_params = json.loads(params) if params else {}
         logger.info(f"Parsed params: {parsed_params}")
-
         # Extract model type from parameters, default to 'dash'
         model_type = parsed_params.get('modelType', 'dash')
         if model_type not in ['dash', 'transformer']:
             model_type = 'dash'  # Default to dash if invalid model type
         logger.info(f"Using model type: {model_type}")
-
         # Handle spectrum data - either from file or OSC reference
         spectrum_data = None
         try:
@@ -125,11 +227,9 @@ async def process_spectrum(
         except Exception as e:
             logger.error(f"Exception in spectrum reading: {e}", exc_info=True)
             raise HTTPException(status_code=400, detail=f"Spectrum reading error: {e}")
-
         if not spectrum_data:
             logger.error("No spectrum file or OSC reference provided")
             raise HTTPException(status_code=400, detail="No spectrum file or OSC reference provided")
-
         logger.info("About to process spectrum...")
         # Process spectrum
         try:
@@ -148,9 +248,61 @@ async def process_spectrum(
         except Exception as e:
             logger.error(f"Exception in preprocessing: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Preprocessing error: {e}")
-
         logger.info("About to classify spectrum...")
-        # Classify spectrum with selected model
+        # If model_id is provided, use the user-uploaded model
+        if model_id:
+            logger.info(f"Using user-uploaded model: {model_id}")
+            model_base = os.path.join(USER_MODEL_DIR, model_id)
+            model_path = model_base + '.pth'
+            mapping_path = model_base + '.classes.json'
+            input_shape_path = model_base + '.input_shape.json'
+            # Load class mapping and input shape
+            try:
+                with open(mapping_path, 'r') as f:
+                    class_map = json.load(f)
+                with open(input_shape_path, 'r') as f:
+                    input_shape_list = json.load(f)
+                import torch
+                # Load as TorchScript
+                model = torch.jit.load(model_path, map_location='cpu')
+                model.eval()
+                # Prepare input for the model
+                flux = np.array(processed_data['y'])
+                flat_size = np.prod(input_shape_list[1:])
+                flux_flat = np.zeros(flat_size)
+                n = min(len(flux), flat_size)
+                flux_flat[:n] = flux[:n]
+                model_input = torch.tensor(flux_flat, dtype=torch.float32).reshape(input_shape_list)
+                with torch.no_grad():
+                    output = model(model_input)
+                    probs = torch.softmax(output, dim=-1).cpu().numpy()[0]
+                idx_to_label = {v: k for k, v in class_map.items()}
+                top_indices = np.argsort(probs)[::-1][:3]
+                matches = []
+                for idx in top_indices:
+                    class_name = idx_to_label.get(idx, f'unknown_class_{idx}')
+                    matches.append({
+                        'type': class_name,
+                        'probability': float(probs[idx]),
+                        'redshift': processed_data.get('redshift', 0.0),
+                        'rlap': None,
+                        'reliable': probs[idx] > 0.5
+                    })
+                best_match = matches[0] if matches else {}
+                return sanitize_for_json({
+                    "spectrum": processed_data,
+                    "classification": {
+                        "best_matches": matches,
+                        "best_match": best_match,
+                        "reliable_matches": best_match.get('reliable', False) if best_match else False
+                    },
+                    "model_type": "user_uploaded",
+                    "model_id": model_id
+                })
+            except Exception as e:
+                logger.error(f"Error using user-uploaded model: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=f"User model error: {e}")
+        # Otherwise, use the default logic
         try:
             classifier = get_classifier(model_type)
             classification_results = classifier.classify(processed_data)
@@ -158,7 +310,6 @@ async def process_spectrum(
         except Exception as e:
             logger.error(f"Exception in classification: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Classification error: {e}")
-
         logger.info("/process completed successfully")
         return sanitize_for_json({
             "spectrum": processed_data,
@@ -243,7 +394,8 @@ async def get_line_list():
 @app.post("/api/batch-process")
 async def batch_process(
     params: str = Form('{}'),
-    zip_file: UploadFile = File(...)
+    zip_file: UploadFile = File(...),
+    model_id: Optional[str] = Form(None)
 ):
     """
     Accepts a .zip file containing multiple spectrum files, processes and classifies each, and returns results per file.
@@ -285,47 +437,89 @@ async def batch_process(
                             content = file_obj.read()
                             try:
                                 text = content.decode('utf-8')
+                                file_like = io.StringIO(text)
                             except UnicodeDecodeError:
-                                text = content.decode('latin1')
-                            import io as _io
-                            file_like = _io.StringIO(text)
-                        # Emulate UploadFile interface for SpectrumProcessor
-                        class FakeUploadFile:
-                            def __init__(self, filename, file):
-                                self.filename = filename
-                                self.file = file
-                        fake_file = FakeUploadFile(fname, file_like)
-                        spectrum_data = spectrum_processor.read_file(fake_file)
-                        processed_data = spectrum_processor.process(
-                            x=spectrum_data['x'],
-                            y=spectrum_data['y'],
-                            smoothing=parsed_params.get('smoothing', 0),
-                            known_z=parsed_params.get('knownZ', False),
-                            z_value=parsed_params.get('zValue'),
-                            min_wave=parsed_params.get('minWave'),
-                            max_wave=parsed_params.get('maxWave'),
-                            calculate_rlap=parsed_params.get('calculateRlap', False)
-                        )
-                        classification_results = classifier.classify(processed_data)
-                        results[fname] = {
-                            "spectrum": processed_data,
-                            "classification": classification_results,
-                            "model_type": model_type
-                        }
+                                file_like = io.BytesIO(content)
+                        # Process spectrum
+                        try:
+                            spectrum_data = spectrum_processor.read_file(file_like)
+                            processed_data = spectrum_processor.process(
+                                x=spectrum_data['x'],
+                                y=spectrum_data['y'],
+                                smoothing=parsed_params.get('smoothing', 0),
+                                known_z=parsed_params.get('knownZ', False),
+                                z_value=parsed_params.get('zValue'),
+                                min_wave=parsed_params.get('minWave'),
+                                max_wave=parsed_params.get('maxWave'),
+                                calculate_rlap=parsed_params.get('calculateRlap', False)
+                            )
+                            # Use user-uploaded model if model_id is provided
+                            if model_id:
+                                logger.info(f"Using user-uploaded model: {model_id} for batch item {fname}")
+                                model_base = os.path.join(USER_MODEL_DIR, model_id)
+                                model_path = model_base + '.pth'
+                                mapping_path = model_base + '.classes.json'
+                                input_shape_path = model_base + '.input_shape.json'
+                                with open(mapping_path, 'r') as f:
+                                    class_map = json.load(f)
+                                with open(input_shape_path, 'r') as f:
+                                    input_shape_list = json.load(f)
+                                import torch
+                                model = torch.jit.load(model_path, map_location='cpu')
+                                model.eval()
+                                flux = np.array(processed_data['y'])
+                                flat_size = np.prod(input_shape_list[1:])
+                                flux_flat = np.zeros(flat_size)
+                                n = min(len(flux), flat_size)
+                                flux_flat[:n] = flux[:n]
+                                model_input = torch.tensor(flux_flat, dtype=torch.float32).reshape(input_shape_list)
+                                with torch.no_grad():
+                                    output = model(model_input)
+                                    probs = torch.softmax(output, dim=-1).cpu().numpy()[0]
+                                idx_to_label = {v: k for k, v in class_map.items()}
+                                top_indices = np.argsort(probs)[::-1][:3]
+                                matches = []
+                                for idx in top_indices:
+                                    class_name = idx_to_label.get(idx, f'unknown_class_{idx}')
+                                    matches.append({
+                                        'type': class_name,
+                                        'probability': float(probs[idx]),
+                                        'redshift': processed_data.get('redshift', 0.0),
+                                        'rlap': None,
+                                        'reliable': probs[idx] > 0.5
+                                    })
+                                best_match = matches[0] if matches else {}
+                                results[fname] = {
+                                    "spectrum": processed_data,
+                                    "classification": {
+                                        "best_matches": matches,
+                                        "best_match": best_match,
+                                        "reliable_matches": best_match.get('reliable', False) if best_match else False
+                                    },
+                                    "model_type": "user_uploaded",
+                                    "model_id": model_id
+                                }
+                                continue
+                            classification_results = classifier.classify(processed_data)
+                            results[fname] = {
+                                "spectrum": processed_data,
+                                "classification": classification_results,
+                                "model_type": model_type
+                            }
+                        except Exception as e:
+                            results[fname] = {"error": str(e)}
                 except Exception as e:
-                    # Log first few lines of file for debugging if error occurs
-                    logger.error(f"Error processing {fname}: {e}", exc_info=True)
                     results[fname] = {"error": str(e)}
-        logger.info("/api/batch-process completed")
-        return sanitize_for_json(results)
+        return results
     except Exception as e:
-        logger.critical(f"Unhandled exception in /api/batch-process: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Exception in batch_process: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Batch process error: {e}")
 
 @app.post("/api/batch-process-multiple")
 async def batch_process_multiple(
     params: str = Form('{}'),
-    files: List[UploadFile] = File(...)
+    files: List[UploadFile] = File(...),
+    model_id: Optional[str] = Form(None)
 ):
     """
     Accepts multiple individual spectrum files, processes and classifies each, and returns results per file.
@@ -362,15 +556,61 @@ async def batch_process_multiple(
                     max_wave=parsed_params.get('maxWave'),
                     calculate_rlap=parsed_params.get('calculateRlap', False)
                 )
+                # Use user-uploaded model if model_id is provided
+                if model_id:
+                    logger.info(f"Using user-uploaded model: {model_id} for batch item {file.filename}")
+                    model_base = os.path.join(USER_MODEL_DIR, model_id)
+                    model_path = model_base + '.pth'
+                    mapping_path = model_base + '.classes.json'
+                    input_shape_path = model_base + '.input_shape.json'
+                    with open(mapping_path, 'r') as f:
+                        class_map = json.load(f)
+                    with open(input_shape_path, 'r') as f:
+                        input_shape_list = json.load(f)
+                    import torch
+                    model = torch.jit.load(model_path, map_location='cpu')
+                    model.eval()
+                    flux = np.array(processed_data['y'])
+                    flat_size = np.prod(input_shape_list[1:])
+                    flux_flat = np.zeros(flat_size)
+                    n = min(len(flux), flat_size)
+                    flux_flat[:n] = flux[:n]
+                    model_input = torch.tensor(flux_flat, dtype=torch.float32).reshape(input_shape_list)
+                    with torch.no_grad():
+                        output = model(model_input)
+                        probs = torch.softmax(output, dim=-1).cpu().numpy()[0]
+                    idx_to_label = {v: k for k, v in class_map.items()}
+                    top_indices = np.argsort(probs)[::-1][:3]
+                    matches = []
+                    for idx in top_indices:
+                        class_name = idx_to_label.get(idx, f'unknown_class_{idx}')
+                        matches.append({
+                            'type': class_name,
+                            'probability': float(probs[idx]),
+                            'redshift': processed_data.get('redshift', 0.0),
+                            'rlap': None,
+                            'reliable': probs[idx] > 0.5
+                        })
+                    best_match = matches[0] if matches else {}
+                    results[file.filename] = {
+                        "spectrum": processed_data,
+                        "classification": {
+                            "best_matches": matches,
+                            "best_match": best_match,
+                            "reliable_matches": best_match.get('reliable', False) if best_match else False
+                        },
+                        "model_type": "user_uploaded",
+                        "model_id": model_id
+                    }
+                    continue
                 classification_results = classifier.classify(processed_data)
-                results[fname] = {
+                results[file.filename] = {
                     "spectrum": processed_data,
                     "classification": classification_results,
                     "model_type": model_type
                 }
             except Exception as e:
-                logger.error(f"Error processing {fname}: {e}", exc_info=True)
-                results[fname] = {"error": str(e)}
+                results[file.filename] = {"error": str(e)}
 
         logger.info("/api/batch-process-multiple completed")
         return sanitize_for_json(results)
@@ -398,15 +638,7 @@ async def estimate_redshift(request: Request):
     data_npz = np.load(template_path, allow_pickle=True)
     snTemplates_raw = data_npz['snTemplates'].item()
     snTemplates = {str(k): v for k, v in snTemplates_raw.items()}
-    # Normalize age bin
-    def normalize_age_bin(age):
-        import re
-        age = age.replace('–', '-').replace('to', '-').replace('TO', '-').replace('To', '-')
-        age = age.replace(' ', '')
-        match = re.match(r'(-?\d+)-(-?\d+)', age)
-        if match:
-            return f"{int(match.group(1))} to {int(match.group(2))}"
-        return age
+
     age_norm = normalize_age_bin(age)
     # Find templates for this type/age
     template_fluxes = []

@@ -340,6 +340,7 @@ const BatchPage: React.FC = () => {
                     <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Best Match Type</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Best Match Age</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Probability</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>RLAP</TableCell>
                     <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Redshift</TableCell>
                   </TableRow>
                 </TableHead>
@@ -355,6 +356,11 @@ const BatchPage: React.FC = () => {
                       <TableCell sx={{ color: 'white' }}>{result.classification?.best_match?.type ?? '-'}</TableCell>
                       <TableCell sx={{ color: 'white' }}>{result.classification?.best_match?.age ?? '-'}</TableCell>
                       <TableCell sx={{ color: 'white' }}>{result.classification?.best_match?.probability?.toFixed(3) ?? '-'}</TableCell>
+                      <TableCell sx={{ color: 'white' }}>{
+                        result.classification?.best_match?.rlap !== undefined && result.classification?.best_match?.rlap !== null
+                          ? result.classification.best_match.rlap
+                          : '-'
+                      }</TableCell>
                       <TableCell sx={{ color: 'white' }}>{result.classification?.best_match?.redshift ?? '-'}</TableCell>
                     </TableRow>
                   ))}

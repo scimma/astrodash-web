@@ -2,9 +2,9 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 import math
+from typing import Optional
 
-
-#simple MLPs
+# MLPs
 class singlelayerMLP(nn.Module):
     def __init__(self, in_dim, out_dim):
         super(singlelayerMLP, self).__init__()
@@ -60,7 +60,7 @@ class learnable_fourier_encoding(nn.Module):
 
 
 class SinusoidalPositionalEmbedding(nn.Module):
-    def __init__(self, dim = 64):
+    def __init__(self, dim: int = 64):
         '''
         The usual sinusoidal positional encoding
         args:
@@ -68,27 +68,29 @@ class SinusoidalPositionalEmbedding(nn.Module):
         '''
         super().__init__()
         self.dim = dim
-        self.div_term = torch.exp(torch.arange(0, dim, 2).float() * (-torch.log(torch.tensor(10000.0)) / dim))
+        div_term = torch.exp(torch.arange(0, dim, 2).float() * (-torch.log(torch.tensor(10000.0)) / dim))
+        self.register_buffer('div_term', div_term)
         # Create the positional encoding matrix
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [batch_size, seq_len]
         sine = torch.sin(x[:,:,None] * self.div_term[None,None,:].to(x.device))
         cosine = torch.cos(x[:,:,None] * self.div_term[None,None,:].to(x.device))
         return torch.cat([sine, cosine], dim=-1)
 
 class SinusoidalMLPPositionalEmbedding(nn.Module):
-    def __init__(self, dim = 64):
+    def __init__(self, dim: int = 64):
         '''
         The usual sinusoidal positional encoding with an extra MLP, inspired by https://openaccess.thecvf.com/content/ICCV2023/html/Peebles_Scalable_Diffusion_Models_with_Transformers_ICCV_2023_paper.html
         '''
         super().__init__()
         self.dim = dim
-        self.div_term = torch.exp(torch.arange(0, dim).float() * (-torch.log(torch.tensor(10000.0)) / dim))
+        div_term = torch.exp(torch.arange(0, dim).float() * (-torch.log(torch.tensor(10000.0)) / dim))
+        self.register_buffer('div_term', div_term)
         self.fc1 = nn.Linear(2 * dim, dim)
         self.fc2 = nn.Linear(dim, dim)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         # x: [batch_size, seq_len]
         sine = torch.sin(x[:,:,None] * self.div_term[None,None,:].to(x.device))
         cosine = torch.cos(x[:,:,None] * self.div_term[None,None,:].to(x.device))
@@ -102,28 +104,27 @@ class RelativePosition(nn.Module):
     '''
     relative positional encoding for discrete distances
     '''
-    def __init__(self, num_units, max_relative_position):
+    def __init__(self, num_units: int, max_relative_position: int):
         super().__init__()
         self.num_units = num_units
         self.max_relative_position = max_relative_position
-        self.embeddings_table = nn.Parameter(torch.Tensor(max_relative_position * 2 + 1, num_units))
+        self.register_buffer('embeddings_table', torch.empty(max_relative_position * 2 + 1, num_units))
         nn.init.xavier_uniform_(self.embeddings_table)
 
-    def forward(self, length_q, length_k):
-        range_vec_q = torch.arange(length_q)
-        range_vec_k = torch.arange(length_k)
+    def forward(self, length_q: int, length_k: int) -> torch.Tensor:
+        range_vec_q = torch.arange(length_q, device=self.embeddings_table.device)
+        range_vec_k = torch.arange(length_k, device=self.embeddings_table.device)
         distance_mat = range_vec_k[None, :] - range_vec_q[:, None]
         distance_mat_clipped = torch.clamp(distance_mat, -self.max_relative_position, self.max_relative_position)
         final_mat = distance_mat_clipped + self.max_relative_position
-        final_mat = torch.LongTensor(final_mat).to(self.embeddings_table.device)
-        embeddings = self.embeddings_table[final_mat].to(self.embeddings_table.device)
-
+        final_mat = final_mat.long()
+        embeddings = self.embeddings_table[final_mat]
         return embeddings
 
 # attention blocks
 
 class MultiHeadAttentionLayer_relative(nn.Module):
-    def __init__(self, hid_dim, n_heads, dropout, device):
+    def __init__(self, hid_dim: int, n_heads: int, dropout: float, device: torch.device):
         '''
         Multiheaded attention with relative positional encoding
         '''
@@ -147,9 +148,10 @@ class MultiHeadAttentionLayer_relative(nn.Module):
 
         self.dropout = nn.Dropout(dropout)
 
-        self.scale = torch.sqrt(torch.FloatTensor([self.head_dim])).to(device)
+        scale = torch.sqrt(torch.FloatTensor([self.head_dim])).to(device)
+        self.register_buffer('scale', scale)
 
-    def forward(self, query, key, value, mask = None):
+    def forward(self, query: torch.Tensor, key: torch.Tensor, value: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         #query = [batch size, query len, hid dim]
         #key = [batch size, key len, hid dim]
         #value = [batch size, value len, hid dim]
@@ -204,9 +206,9 @@ class MultiHeadAttentionLayer_relative(nn.Module):
         return x
 
 class TransformerBlock(nn.Module):
-    def __init__(self, embed_dim, num_heads, ff_dim,
-                 dropout=0.1,
-                 context_self_attn = False):
+    def __init__(self, embed_dim: int, num_heads: int, ff_dim: int,
+                 dropout: float = 0.1,
+                 context_self_attn: bool = False):
         '''
         Usual transformer block allowing context
         '''
@@ -220,7 +222,8 @@ class TransformerBlock(nn.Module):
                                                 dropout=dropout, batch_first=True)
             self.layernorm_context = nn.LayerNorm(embed_dim)
         else:
-            self.context_self_attn = None
+            self.context_self_attn = nn.Identity()
+            self.layernorm_context = nn.Identity()
         self.ffn = nn.Sequential(
             nn.Linear(embed_dim, ff_dim),
             nn.GELU(),
@@ -231,7 +234,7 @@ class TransformerBlock(nn.Module):
         self.layernorm3 = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, context=None, mask=None, context_mask=None):
+    def forward(self, x: torch.Tensor, context: Optional[torch.Tensor] = None, mask: Optional[torch.Tensor] = None, context_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         # we made x [batch, seq_len, embed_dim]
 
         attn_output, _ = self.self_attn(x, x, x,
@@ -241,13 +244,13 @@ class TransformerBlock(nn.Module):
 
         # Cross-attention (if context is provided)
         if context is not None:
-            if self.context_self_attn:
+            # Always call context_self_attn and layernorm_context (nn.Identity if not used)
+            if not isinstance(self.context_self_attn, nn.Identity):
                 context_attn_output, _ = self.context_self_attn(context, context, context,
                                                                 key_padding_mask=context_mask)
                 context = self.layernorm_context(context + self.dropout(context_attn_output))
-            #breakpoint()
             cross_attn_output, _ = self.cross_attn(x, context, context,
-                                                       key_padding_mask=context_mask)
+                                                   key_padding_mask=context_mask)
             x = self.layernorm2(x + self.dropout(cross_attn_output))
 
         # Feedforward
@@ -288,14 +291,14 @@ class TransformerModel(nn.Module):
 
 class spectraTransformerEncoder(nn.Module):
     def __init__(self,
-                 bottleneck_length,
-                 model_dim,
-                 num_heads,
-                 num_layers,
-                 num_classes,
-                 ff_dim,
-                 dropout=0.1,
-                 selfattn=False):
+                 bottleneck_length: int,
+                 model_dim: int,
+                 num_heads: int,
+                 num_layers: int,
+                 num_classes: int,
+                 ff_dim: int,
+                 dropout: float = 0.1,
+                 selfattn: bool = False):
         '''
         Transformer encoder for spectra, with cross-attention pooling.
         Args:
@@ -330,7 +333,7 @@ class spectraTransformerEncoder(nn.Module):
             nn.Linear(model_dim * 2, num_classes)
         )
 
-    def forward(self, wavelength, flux, redshift, mask=None):
+    def forward(self, wavelength: torch.Tensor, flux: torch.Tensor, redshift: torch.Tensor, mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         '''
         Args:
             wavelength: [batch_size, seq_len=1024]
@@ -360,7 +363,7 @@ class spectraTransformerEncoder(nn.Module):
         # Adjust mask accordingly
         if mask is not None:
             # add a false at end to account for the added redshift embd
-            mask = torch.cat([mask, torch.zeros(mask.shape[0], 1).bool().to(mask.device)], dim=1)
+            mask = torch.cat([mask, torch.zeros(mask.shape[0], 1).to(torch.bool).to(mask.device)], dim=1)
 
         # Repeat learnable bottleneck across batch
         x = self.initbottleneck[None, :, :].repeat(context.shape[0], 1, 1)

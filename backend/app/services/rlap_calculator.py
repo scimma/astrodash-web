@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.signal import argrelmax
-from .astrodash_backend import mean_zero_spectra, get_training_parameters
-from .redshift_estimator import get_median_redshift
+from .astrodash_backend import get_training_parameters
+from .redshift_estimator import get_median_redshift, mean_zero_spectra
 from .utils import get_nonzero_minmax, get_redshift_axis
 import logging
 
