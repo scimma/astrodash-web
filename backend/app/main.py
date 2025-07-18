@@ -286,7 +286,7 @@ async def process_spectrum(
                         'probability': float(probs[idx]),
                         'redshift': processed_data.get('redshift', 0.0),
                         'rlap': None,
-                        'reliable': probs[idx] > 0.5
+                        'reliable': bool(probs[idx] > 0.5)
                     })
                 best_match = matches[0] if matches else {}
                 return sanitize_for_json({
@@ -430,16 +430,16 @@ async def batch_process(
                         # Prepare file-like object for SpectrumProcessor
                         ext = fname.lower().split('.')[-1]
                         if ext == 'fits':
-                            # FITS files: keep as BytesIO
                             file_like = io.BytesIO(file_obj.read())
                         else:
-                            # Text files: decode bytes to string, wrap in StringIO
                             content = file_obj.read()
                             try:
                                 text = content.decode('utf-8')
                                 file_like = io.StringIO(text)
                             except UnicodeDecodeError:
                                 file_like = io.BytesIO(content)
+                        # Set .name attribute for file type detection
+                        file_like.name = fname
                         # Process spectrum
                         try:
                             spectrum_data = spectrum_processor.read_file(file_like)
@@ -484,9 +484,9 @@ async def batch_process(
                                     matches.append({
                                         'type': class_name,
                                         'probability': float(probs[idx]),
-                                        'redshift': processed_data.get('redshift', 0.0),
+                                        'redshift': float(processed_data.get('redshift', 0.0)),
                                         'rlap': None,
-                                        'reliable': probs[idx] > 0.5
+                                        'reliable': bool(probs[idx] > 0.5)
                                     })
                                 best_match = matches[0] if matches else {}
                                 results[fname] = {
@@ -510,7 +510,7 @@ async def batch_process(
                             results[fname] = {"error": str(e)}
                 except Exception as e:
                     results[fname] = {"error": str(e)}
-        return results
+        return to_python_type(results)
     except Exception as e:
         logger.error(f"Exception in batch_process: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Batch process error: {e}")
@@ -587,9 +587,9 @@ async def batch_process_multiple(
                         matches.append({
                             'type': class_name,
                             'probability': float(probs[idx]),
-                            'redshift': processed_data.get('redshift', 0.0),
+                            'redshift': float(processed_data.get('redshift', 0.0)),
                             'rlap': None,
-                            'reliable': probs[idx] > 0.5
+                            'reliable': bool(probs[idx] > 0.5)
                         })
                     best_match = matches[0] if matches else {}
                     results[file.filename] = {
@@ -674,3 +674,46 @@ async def estimate_redshift(request: Request):
         "estimated_redshift": float(est_z) if est_z is not None else None,
         "estimated_redshift_error": float(est_z_err) if est_z_err is not None else None
     }
+
+@app.get("/api/list-models")
+async def list_models():
+    """List all user-uploaded models with their metadata."""
+    user_model_dir = os.path.join(os.path.dirname(__file__), '..', 'astrodash_models', 'user_uploaded')
+    if not os.path.exists(user_model_dir):
+        return {"models": []}
+    models = []
+    for fname in os.listdir(user_model_dir):
+        if fname.endswith('.pth'):
+            model_id = fname[:-4]
+            model_filename = fname
+            mapping_path = os.path.join(user_model_dir, model_id + '.classes.json')
+            input_shape_path = os.path.join(user_model_dir, model_id + '.input_shape.json')
+            try:
+                with open(mapping_path, 'r') as f:
+                    class_mapping = json.load(f)
+                with open(input_shape_path, 'r') as f:
+                    input_shape = json.load(f)
+                models.append({
+                    "model_id": model_id,
+                    "model_filename": model_filename,
+                    "class_mapping": class_mapping,
+                    "input_shape": input_shape
+                })
+            except Exception as e:
+                # Skip models with missing or invalid metadata
+                continue
+    return {"models": models}
+
+def to_python_type(obj):
+    if isinstance(obj, dict):
+        return {k: to_python_type(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [to_python_type(v) for v in obj]
+    elif isinstance(obj, tuple):
+        return tuple(to_python_type(v) for v in obj)
+    elif isinstance(obj, np.generic):
+        return obj.item()
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj

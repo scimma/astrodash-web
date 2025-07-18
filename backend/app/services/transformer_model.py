@@ -68,8 +68,7 @@ class SinusoidalPositionalEmbedding(nn.Module):
         '''
         super().__init__()
         self.dim = dim
-        div_term = torch.exp(torch.arange(0, dim, 2).float() * (-torch.log(torch.tensor(10000.0)) / dim))
-        self.register_buffer('div_term', div_term)
+        self.div_term = torch.exp(torch.arange(0, dim, 2).float() * (-torch.log(torch.tensor(10000.0)) / dim))
         # Create the positional encoding matrix
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -85,8 +84,7 @@ class SinusoidalMLPPositionalEmbedding(nn.Module):
         '''
         super().__init__()
         self.dim = dim
-        div_term = torch.exp(torch.arange(0, dim).float() * (-torch.log(torch.tensor(10000.0)) / dim))
-        self.register_buffer('div_term', div_term)
+        self.div_term = torch.exp(torch.arange(0, dim).float() * (-torch.log(torch.tensor(10000.0)) / dim))
         self.fc1 = nn.Linear(2 * dim, dim)
         self.fc2 = nn.Linear(dim, dim)
 
@@ -108,7 +106,7 @@ class RelativePosition(nn.Module):
         super().__init__()
         self.num_units = num_units
         self.max_relative_position = max_relative_position
-        self.register_buffer('embeddings_table', torch.empty(max_relative_position * 2 + 1, num_units))
+        self.embeddings_table = nn.Parameter(torch.Tensor(max_relative_position * 2 + 1, num_units))
         nn.init.xavier_uniform_(self.embeddings_table)
 
     def forward(self, length_q: int, length_k: int) -> torch.Tensor:

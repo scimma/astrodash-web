@@ -17,6 +17,7 @@ export interface ProcessParams {
   file?: File;
   oscRef?: string;
   modelType?: 'dash' | 'transformer';
+  model_id?: string;
 }
 
 export interface ProcessResponse {
@@ -74,7 +75,7 @@ class Api {
     }
 
     // Add other parameters
-    const jsonParams = {
+    const jsonParams: any = {
       smoothing: params.smoothing,
       knownZ: params.knownZ,
       zValue: params.zValue,
@@ -82,8 +83,14 @@ class Api {
       maxWave: params.maxWave,
       calculateRlap: params.calculateRlap,
       oscRef: params.oscRef,
-      modelType: params.modelType || 'dash'  // Default to dash if not specified
     };
+    if (params.modelType) {
+      jsonParams.modelType = params.modelType;
+    } else if (params.model_id) {
+      jsonParams.model_id = params.model_id;
+    } else {
+      jsonParams.modelType = 'dash';
+    }
 
     console.log('API: Adding JSON params to form data:', jsonParams);
     formData.append('params', JSON.stringify(jsonParams));
@@ -194,9 +201,9 @@ class Api {
   }
 
   async getUserModels(): Promise<any[]> {
-    // This should call a backend endpoint to list user-uploaded models
-    // For now, return an empty array (to be implemented in backend)
-    return [];
+    // Fetch user-uploaded models from the backend
+    const response = await axios.get(`${API_BASE_URL}/api/list-models`);
+    return response.data.models || [];
   }
 }
 

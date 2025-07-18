@@ -197,115 +197,132 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
               </CardActionArea>
             </Card>
           </motion.div>
+        </Box>
 
-          {/* User-uploaded Model Card */}
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            style={{ flex: 1 }}
+        {/* Upload New Model Card */}
+        <Box sx={{ mt: 4 }}>
+          <Card
+            sx={{
+              background: 'rgba(255, 255, 255, 0.1)',
+              backdropFilter: 'blur(10px)',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              color: 'white',
+              minWidth: 280,
+              maxWidth: 400,
+              margin: '0 auto',
+              mb: 3,
+            }}
           >
-            <Card
-              sx={{
-                background: 'rgba(255, 255, 255, 0.1)',
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                color: 'white',
-                height: '100%',
-                minWidth: 280,
-              }}
-            >
-              <CardContent sx={{ textAlign: 'center' }}>
-                <CloudUploadIcon sx={{ fontSize: 48, mb: 2, color: '#2196f3' }} />
-                <Typography variant="h5" component="h3" sx={{ mb: 1, fontWeight: 600 }}>
-                  Upload Your Model
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 2, opacity: 0.8 }}>
-                  Upload a PyTorch .pth/.pt file, class mapping, and input shape
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', mb: 1 }}>
-                  <Button
-                    variant="contained"
-                    component="label"
-                    sx={{ mb: 1, background: '#2196f3', color: 'white' }}
-                    startIcon={<CloudUploadIcon />}
-                  >
-                    {file ? file.name : 'Choose Model File'}
-                    <input
-                      type="file"
-                      accept=".pth,.pt"
-                      hidden
-                      onChange={handleFileChange}
-                    />
-                  </Button>
-                  <TextField
-                    label="Class Mapping (JSON)"
-                    value={classMapping}
-                    onChange={e => setClassMapping(e.target.value)}
-                    size="small"
-                    fullWidth
-                    multiline
-                    minRows={2}
-                    sx={{ background: 'rgba(255,255,255,0.08)', borderRadius: 1, input: { color: 'white' }, label: { color: 'white' } }}
+            <CardContent sx={{ textAlign: 'center' }}>
+              <CloudUploadIcon sx={{ fontSize: 48, mb: 2, color: '#2196f3' }} />
+              <Typography variant="h5" component="h3" sx={{ mb: 1, fontWeight: 600 }}>
+                Upload Your Model
+              </Typography>
+              <Typography variant="body2" sx={{ mb: 2, opacity: 0.8 }}>
+                Upload a PyTorch .pth/.pt file, class mapping, and input shape
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center', mb: 1 }}>
+                <Button
+                  variant="contained"
+                  component="label"
+                  sx={{ mb: 1, background: '#2196f3', color: 'white' }}
+                  startIcon={<CloudUploadIcon />}
+                >
+                  {file ? file.name : 'Choose Model File'}
+                  <input
+                    type="file"
+                    accept=".pth,.pt"
+                    hidden
+                    onChange={handleFileChange}
                   />
-                  <TextField
-                    label="Input Shape (JSON, e.g. [1,1,32,32])"
-                    value={inputShape}
-                    onChange={e => setInputShape(e.target.value)}
-                    size="small"
-                    fullWidth
-                    sx={{ background: 'rgba(255,255,255,0.08)', borderRadius: 1, input: { color: 'white' }, label: { color: 'white' } }}
-                  />
-                  <Button
-                    variant="outlined"
-                    color="primary"
-                    onClick={handleUpload}
-                    disabled={!file || !classMapping || !inputShape || uploading}
-                    sx={{ mt: 1 }}
-                  >
-                    {uploading ? 'Uploading...' : 'Upload Model'}
-                  </Button>
-                  {uploadError && <Typography color="error" sx={{ mt: 1 }}>{uploadError}</Typography>}
-                  {uploadSuccess && (
-                    <Box sx={{ mt: 1, color: '#90ee90', fontSize: 14 }}>
-                      Uploaded! Model ID: <b>{uploadSuccess.model_id}</b>
-                      <br />Output shape: {JSON.stringify(uploadSuccess.output_shape)}
-                      <br />Input shape: {JSON.stringify(uploadSuccess.input_shape)}
-                      <Button
-                        variant="contained"
-                        color="success"
-                        size="small"
-                        sx={{ mt: 1 }}
-                        onClick={() => handleModelSelect({ user: uploadSuccess.model_id })}
-                      >
-                        Use This Model
-                      </Button>
-                    </Box>
-                  )}
-                </Box>
-                {/* List of previously uploaded models (future: from backend) */}
-                {userModels.length > 0 && (
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="subtitle2" sx={{ color: '#90caf9', mb: 1 }}>
-                      Your Uploaded Models
-                    </Typography>
-                    {userModels.map((model: any) => (
-                      <Button
-                        key={model.model_id}
-                        variant="outlined"
-                        color="info"
-                        size="small"
-                        sx={{ mb: 1, mr: 1 }}
-                        onClick={() => handleModelSelect({ user: model.model_id })}
-                      >
-                        {model.model_id}
-                      </Button>
-                    ))}
+                </Button>
+                <TextField
+                  label="Class Mapping (JSON)"
+                  value={classMapping}
+                  onChange={e => setClassMapping(e.target.value)}
+                  size="small"
+                  fullWidth
+                  multiline
+                  minRows={2}
+                  sx={{ background: 'rgba(255,255,255,0.08)', borderRadius: 1, input: { color: 'white' }, label: { color: 'white' } }}
+                />
+                <TextField
+                  label="Input Shape (JSON, e.g. [1,1024])"
+                  value={inputShape}
+                  onChange={e => setInputShape(e.target.value)}
+                  size="small"
+                  fullWidth
+                  sx={{ background: 'rgba(255,255,255,0.08)', borderRadius: 1, input: { color: 'white' }, label: { color: 'white' } }}
+                />
+                <Button
+                  variant="outlined"
+                  color="primary"
+                  onClick={handleUpload}
+                  disabled={!file || !classMapping || !inputShape || uploading}
+                  sx={{ mt: 1 }}
+                >
+                  {uploading ? 'Uploading...' : 'Upload Model'}
+                </Button>
+                {uploadError && <Typography color="error" sx={{ mt: 1 }}>{uploadError}</Typography>}
+                {uploadSuccess && (
+                  <Box sx={{ mt: 1, color: '#90ee90', fontSize: 14 }}>
+                    Uploaded! Model ID: <b>{uploadSuccess.model_id}</b>
+                    <br />Output shape: {JSON.stringify(uploadSuccess.output_shape)}
+                    <br />Input shape: {JSON.stringify(uploadSuccess.input_shape)}
+                    <Button
+                      variant="contained"
+                      color="success"
+                      size="small"
+                      sx={{ mt: 1 }}
+                      onClick={() => handleModelSelect({ user: uploadSuccess.model_id })}
+                    >
+                      Use This Model
+                    </Button>
                   </Box>
                 )}
-              </CardContent>
-            </Card>
-          </motion.div>
+              </Box>
+            </CardContent>
+          </Card>
         </Box>
+
+        {/* User-uploaded Models */}
+        {userModels.length > 0 && (
+          <Box sx={{ mt: 4 }}>
+            <Typography variant="h6" sx={{ mb: 2, color: 'white', fontWeight: 500 }}>
+              User-Uploaded Models
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+              {userModels.map((model) => (
+                <Card
+                  key={model.model_id}
+                  sx={{
+                    background: 'rgba(255,255,255,0.08)',
+                    color: 'white',
+                    minWidth: 260,
+                    maxWidth: 320,
+                  }}
+                >
+                  <CardActionArea onClick={() => handleModelSelect({ user: model.model_id })}>
+                    <CardContent>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
+                        Model ID: {model.model_id}
+                      </Typography>
+                      <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>
+                        Filename: {model.model_filename}
+                      </Typography>
+                      <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>
+                        Input Shape: {JSON.stringify(model.input_shape)}
+                      </Typography>
+                      <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>
+                        Classes: {Object.keys(model.class_mapping).join(', ')}
+                      </Typography>
+                    </CardContent>
+                  </CardActionArea>
+                </Card>
+              ))}
+            </Box>
+          </Box>
+        )}
       </DialogContent>
 
       <DialogActions sx={{ p: 3, pt: 1 }}>

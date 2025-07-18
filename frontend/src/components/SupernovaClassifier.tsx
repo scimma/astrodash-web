@@ -136,7 +136,19 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   const location = useLocation();
 
   // Get the selected model from navigation state, default to 'dash'
-  const selectedModel: ModelType = location.state?.model || 'dash';
+  let selectedModel: ModelType = location.state?.model;
+  if (!selectedModel) {
+    const stored = localStorage.getItem('astrodash_selected_model');
+    if (stored) {
+      try {
+        selectedModel = JSON.parse(stored);
+      } catch {
+        selectedModel = 'dash';
+      }
+    } else {
+      selectedModel = 'dash';
+    }
+  }
 
   // State for file selection
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -416,7 +428,14 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     setError(null);
     setErrorOpen(false);
     try {
-      const params: ProcessParams = {
+      let modelType: 'dash' | 'transformer' | undefined = undefined;
+      let model_id: string | undefined = undefined;
+      if (selectedModel === 'dash' || selectedModel === 'transformer') {
+        modelType = selectedModel;
+      } else if (typeof selectedModel === 'object' && selectedModel.user) {
+        model_id = selectedModel.user;
+      }
+      const params: any = {
         smoothing,
         knownZ,
         zValue: knownZ ? parseFloat(zValue) : undefined,
@@ -425,7 +444,8 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
         calculateRlap,
         file: selectedFile || undefined,
         oscRef: oscRef || undefined,
-        modelType: selectedModel  // Pass the selected model
+        ...(modelType ? { modelType } : {}),
+        ...(model_id ? { model_id } : {}),
       };
 
       console.log('Calling API with params:', params);

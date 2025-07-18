@@ -16,6 +16,8 @@ const LandingPage: React.FC = () => {
   };
 
   const handleModelSelect = (model: ModelType) => {
+    // Persist model selection in localStorage
+    localStorage.setItem('astrodash_selected_model', JSON.stringify(model));
     if (pendingAction === 'classify') {
       navigate('/classify', { state: { model } });
     } else if (pendingAction === 'batch') {

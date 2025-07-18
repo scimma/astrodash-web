@@ -24,8 +24,8 @@ class MLClassifier:
         backend_root = os.path.join(services_dir, '..', '..')
         models_base_path = os.path.join(backend_root, 'astrodash_models')
 
-        self.model_path_zero_z = os.path.join(models_base_path, 'zeroZ', 'zero_z_pytorch.pth')
-        self.model_path_agnostic_z = os.path.join(models_base_path, 'agnosticZ', 'agnostic_z_pytorch.pth')
+        self.model_path_zero_z = os.path.join(models_base_path, 'zeroZ', 'pytorch_model.pth')
+        self.model_path_agnostic_z = os.path.join(models_base_path, 'agnosticZ', 'pytorch_model.pth')
 
     def classify(self, processed_data):
         """Classify spectrum data and return results using the PyTorch-based backend"""

@@ -156,7 +156,10 @@ class SpectrumProcessor:
         osc_base_url = "https://api.astrocats.space/"
         obj_name = filename.split('-')[1]
         try:
-            response = urlopen(f"{osc_base_url}{obj_name}/spectra/time+data")
+            import ssl
+            context = ssl._create_unverified_context()
+            from urllib.request import urlopen
+            response = urlopen(f"{osc_base_url}{obj_name}/spectra/time+data", context=context)
             data = json.loads(response.read(), object_pairs_hook=OrderedDict)
             spectrum_data = data[next(iter(data))]['spectra'][0][1]
             wave, flux = np.array(spectrum_data).T.astype(float)
