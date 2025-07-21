@@ -346,7 +346,7 @@ def get_valid_sn_types_and_age_bins(npz_path):
 
 __all__ = [
     'get_training_parameters', 'BestTypesListSingleRedshift', 'LoadInputSpectra',
-    'classification_split', 'combined_prob', 'RlapCalc', 'normalise_spectrum',
+    'classification_split', 'combined_prob', 'normalise_spectrum',
     'AstroDashPyTorchNet', 'AgeBinning', 'CreateLabels', 'LoadInputSpectra',
-    'BestTypesListSingleRedshift', 'RlapCalc', 'normalise_spectrum', 'get_valid_sn_types_and_age_bins'
+    'BestTypesListSingleRedshift', 'normalise_spectrum', 'get_valid_sn_types_and_age_bins'
 ]
