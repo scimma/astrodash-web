@@ -233,16 +233,27 @@ class BestTypesListSingleRedshift:
     def __init__(self, model_path, input_images, type_names_list, nw, n_bins):
         self.type_names_list = np.array(type_names_list)
         logger.info(f"Loading PyTorch model from {model_path}")
-        model = AstroDashPyTorchNet(n_bins)
-        model.load_state_dict(torch.load(model_path))
+
+        # Load the saved model state to determine the actual number of output classes
+        saved_state_dict = torch.load(model_path)
+        actual_n_types = saved_state_dict['classifier.3.weight'].shape[0]
+        logger.info(f"Saved model has {actual_n_types} output classes, but we need {n_bins} classes")
+
+        # Create model with the actual number of output classes from the saved model
+        model = AstroDashPyTorchNet(actual_n_types)
+        model.load_state_dict(saved_state_dict)
         model.eval()
         logger.info("Model loaded and set to eval mode.")
+
         with torch.no_grad():
             outputs = model(input_images)
+
         self.best_types = []
         self.softmax_ordered = []
         for i in range(outputs.shape[0]):
-            softmax = outputs[i].numpy()[:len(self.type_names_list)]
+            # Only use the first n_bins outputs (corresponding to actual galaxy types)
+            # The model may have been trained with more classes but only the first n_bins are valid
+            softmax = outputs[i].numpy()[:n_bins]
             best_types, _, softmax_ordered = self.create_list(softmax)
             self.best_types.append(best_types)
             self.softmax_ordered.append(softmax_ordered)

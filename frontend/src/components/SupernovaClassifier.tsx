@@ -434,6 +434,8 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
         modelType = selectedModel;
       } else if (typeof selectedModel === 'object' && selectedModel.user) {
         model_id = selectedModel.user;
+        // Explicitly set modelType to undefined when using user-uploaded model
+        modelType = undefined;
       }
       const params: any = {
         smoothing,
@@ -448,6 +450,9 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
         ...(model_id ? { model_id } : {}),
       };
 
+      console.log('Selected model:', selectedModel);
+      console.log('Model type:', modelType);
+      console.log('Model ID:', model_id);
       console.log('Calling API with params:', params);
       const response = await api.processSpectrum(params);
       console.log('Received response:', response);
@@ -1300,15 +1305,15 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
         fontSize: '1rem',
         borderTop: '1.5px solid rgba(120,80,200,0.12)',
       }}>
-        <MuiLink href="/docs" color="inherit" underline="hover" sx={{ mx: 1 }}>
+        <MuiLink href="http://localhost:4000" color="inherit" underline="hover" sx={{ mx: 1 }}>
           Docs
         </MuiLink>
         |
-        <MuiLink href="https://github.com/astrodash/astrodash-api" color="inherit" underline="hover" sx={{ mx: 1 }}>
+        <MuiLink href="https://github.com/jesusCaraball0/astrodash-web" color="inherit" underline="hover" sx={{ mx: 1 }}>
           GitHub
         </MuiLink>
         |
-        <span style={{ opacity: 0.7, marginLeft: 8 }}>© {new Date().getFullYear()} Astrodash</span>
+        <span style={{ opacity: 0.7, marginLeft: 8 }}>{new Date().getFullYear()} Astrodash</span>
       </Box>
     </Container>
   );

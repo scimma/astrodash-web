@@ -154,6 +154,9 @@ def get_classifier(model_type: str):
     if model_type == 'transformer':
         logger.info("Instantiating TransformerClassifier")
         return TransformerClassifier()
+    elif model_type == 'user_uploaded':
+        logger.info("User-uploaded model - this should be handled separately")
+        raise ValueError("User-uploaded models should be handled in the main process function")
     else:
         logger.info("Instantiating MLClassifier (Dash)")
         return MLClassifier()
@@ -203,13 +206,20 @@ async def process_spectrum(
         logger.info("/process endpoint called")
         logger.info(f"Received params: {params}")
         logger.info(f"Received file: {file.filename if file else 'None'}")
+        logger.info(f"Received model_id: {model_id}")
         parsed_params = json.loads(params) if params else {}
         logger.info(f"Parsed params: {parsed_params}")
-        # Extract model type from parameters, default to 'dash'
-        model_type = parsed_params.get('modelType', 'dash')
-        if model_type not in ['dash', 'transformer']:
-            model_type = 'dash'  # Default to dash if invalid model type
-        logger.info(f"Using model type: {model_type}")
+
+        # Check if model_id is provided first (user-uploaded model)
+        if model_id:
+            logger.info(f"Using user-uploaded model: {model_id}")
+            model_type = "user_uploaded"  # Set model_type for user-uploaded models
+        else:
+            # Extract model type from parameters, default to 'dash'
+            model_type = parsed_params.get('modelType', 'dash')
+            if model_type not in ['dash', 'transformer']:
+                model_type = 'dash'  # Default to dash if invalid model type
+            logger.info(f"Using model type: {model_type}")
         # Handle spectrum data - either from file or OSC reference
         spectrum_data = None
         try:
@@ -266,29 +276,57 @@ async def process_spectrum(
                 # Load as TorchScript
                 model = torch.jit.load(model_path, map_location='cpu')
                 model.eval()
-                # Prepare input for the model
+                                # Prepare input for the model
                 flux = np.array(processed_data['y'])
-                flat_size = np.prod(input_shape_list[1:])
-                flux_flat = np.zeros(flat_size)
-                n = min(len(flux), flat_size)
-                flux_flat[:n] = flux[:n]
-                model_input = torch.tensor(flux_flat, dtype=torch.float32).reshape(input_shape_list)
-                with torch.no_grad():
-                    output = model(model_input)
+                wavelength = np.array(processed_data['x'])
+                redshift = processed_data.get('redshift', 0.0)
+
+                logger.info(f"User model input shape: {input_shape_list}")
+                logger.info(f"Flux shape: {flux.shape}, Wavelength shape: {wavelength.shape}")
+
+                # Handle different input shapes based on model type
+                if len(input_shape_list) == 4:  # [batch, channels, height, width] - CNN style
+                    flat_size = np.prod(input_shape_list[1:])
+                    flux_flat = np.zeros(flat_size)
+                    n = min(len(flux), flat_size)
+                    flux_flat[:n] = flux[:n]
+                    model_input = torch.tensor(flux_flat, dtype=torch.float32).reshape(input_shape_list)
+                    with torch.no_grad():
+                        output = model(model_input)
+                else:  # Transformer style - needs wavelength, flux, redshift
+                    # Interpolate to 1024 points if needed (like transformer model)
+                    if len(flux) != 1024:
+                        x_old = np.linspace(0, 1, len(flux))
+                        x_new = np.linspace(0, 1, 1024)
+                        flux = np.interp(x_new, x_old, flux)
+                        wavelength = np.interp(x_new, x_old, wavelength)
+
+                    wavelength_tensor = torch.tensor(wavelength, dtype=torch.float32).unsqueeze(0)  # [1, 1024]
+                    flux_tensor = torch.tensor(flux, dtype=torch.float32).unsqueeze(0)              # [1, 1024]
+                    redshift_tensor = torch.tensor([[redshift]], dtype=torch.float32)               # [1, 1]
+
+                    with torch.no_grad():
+                        output = model(wavelength_tensor, flux_tensor, redshift_tensor)
                     probs = torch.softmax(output, dim=-1).cpu().numpy()[0]
                 idx_to_label = {v: k for k, v in class_map.items()}
                 top_indices = np.argsort(probs)[::-1][:3]
                 matches = []
+                # Check if user wants RLAP calculation (note: user-uploaded models don't support RLAP calculation)
+                calculate_rlap = processed_data.get('calculate_rlap', False)
+                if calculate_rlap:
+                    logger.info("RLAP calculation requested but not supported by user-uploaded models. Setting RLAP to None.")
+
                 for idx in top_indices:
                     class_name = idx_to_label.get(idx, f'unknown_class_{idx}')
                     matches.append({
                         'type': class_name,
+                        'age': 'N/A',  # User models don't classify age
                         'probability': float(probs[idx]),
                         'redshift': processed_data.get('redshift', 0.0),
-                        'rlap': None,
+                        'rlap': None,  # Not calculated for user-uploaded models (RLAP requires template matching)
                         'reliable': bool(probs[idx] > 0.5)
                     })
-                best_match = matches[0] if matches else {}
+                best_match = matches[0] if matches else {'type': 'Unknown', 'age': 'N/A', 'probability': 0.0}
                 return sanitize_for_json({
                     "spectrum": processed_data,
                     "classification": {
@@ -302,20 +340,21 @@ async def process_spectrum(
             except Exception as e:
                 logger.error(f"Error using user-uploaded model: {e}", exc_info=True)
                 raise HTTPException(status_code=500, detail=f"User model error: {e}")
-        # Otherwise, use the default logic
-        try:
-            classifier = get_classifier(model_type)
-            classification_results = classifier.classify(processed_data)
-            logger.info(f"Classification completed successfully with {model_type} model.")
-        except Exception as e:
-            logger.error(f"Exception in classification: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Classification error: {e}")
-        logger.info("/process completed successfully")
-        return sanitize_for_json({
-            "spectrum": processed_data,
-            "classification": classification_results,
-            "model_type": model_type
-        })
+        # Otherwise, use the default logic for dash/transformer models
+        if model_type != "user_uploaded":
+            try:
+                classifier = get_classifier(model_type)
+                classification_results = classifier.classify(processed_data)
+                logger.info(f"Classification completed successfully with {model_type} model.")
+            except Exception as e:
+                logger.error(f"Exception in classification: {e}", exc_info=True)
+                raise HTTPException(status_code=500, detail=f"Classification error: {e}")
+            logger.info("/process completed successfully")
+            return sanitize_for_json({
+                "spectrum": processed_data,
+                "classification": classification_results,
+                "model_type": model_type
+            })
     except HTTPException:
         raise
     except Exception as e:
@@ -402,16 +441,23 @@ async def batch_process(
     """
     try:
         logger.info("/api/batch-process endpoint called")
+        logger.info(f"Received model_id: {model_id}")
         parsed_params = json.loads(params) if params else {}
 
-        # Extract model type from parameters, default to 'dash'
-        model_type = parsed_params.get('modelType', 'dash')
-        if model_type not in ['dash', 'transformer']:
-            model_type = 'dash'  # Default to dash if invalid model type
-        logger.info(f"Using model type: {model_type}")
+        # Check if model_id is provided first (user-uploaded model)
+        if model_id:
+            logger.info(f"Using user-uploaded model: {model_id}")
+            model_type = "user_uploaded"  # Set model_type for user-uploaded models
+        else:
+            # Extract model type from parameters, default to 'dash'
+            model_type = parsed_params.get('modelType', 'dash')
+            if model_type not in ['dash', 'transformer']:
+                model_type = 'dash'  # Default to dash if invalid model type
+            logger.info(f"Using model type: {model_type}")
 
-        # Get the appropriate classifier
-        classifier = get_classifier(model_type)
+        # Get the appropriate classifier (only for non-user-uploaded models)
+        if model_type != "user_uploaded":
+            classifier = get_classifier(model_type)
 
         results = {}
         # Read the uploaded zip file into memory
@@ -453,8 +499,8 @@ async def batch_process(
                                 max_wave=parsed_params.get('maxWave'),
                                 calculate_rlap=parsed_params.get('calculateRlap', False)
                             )
-                            # Use user-uploaded model if model_id is provided
-                            if model_id:
+                            # Use user-uploaded model if model_type is "user_uploaded"
+                            if model_type == "user_uploaded":
                                 logger.info(f"Using user-uploaded model: {model_id} for batch item {fname}")
                                 model_base = os.path.join(USER_MODEL_DIR, model_id)
                                 model_path = model_base + '.pth'
@@ -468,27 +514,56 @@ async def batch_process(
                                 model = torch.jit.load(model_path, map_location='cpu')
                                 model.eval()
                                 flux = np.array(processed_data['y'])
-                                flat_size = np.prod(input_shape_list[1:])
-                                flux_flat = np.zeros(flat_size)
-                                n = min(len(flux), flat_size)
-                                flux_flat[:n] = flux[:n]
-                                model_input = torch.tensor(flux_flat, dtype=torch.float32).reshape(input_shape_list)
-                                with torch.no_grad():
-                                    output = model(model_input)
-                                    probs = torch.softmax(output, dim=-1).cpu().numpy()[0]
+                                wavelength = np.array(processed_data['x'])
+                                redshift = processed_data.get('redshift', 0.0)
+
+                                logger.info(f"User model input shape: {input_shape_list}")
+                                logger.info(f"Flux shape: {flux.shape}, Wavelength shape: {wavelength.shape}")
+
+                                # Handle different input shapes based on model type
+                                if len(input_shape_list) == 4:  # [batch, channels, height, width] - CNN style
+                                    flat_size = np.prod(input_shape_list[1:])
+                                    flux_flat = np.zeros(flat_size)
+                                    n = min(len(flux), flat_size)
+                                    flux_flat[:n] = flux[:n]
+                                    model_input = torch.tensor(flux_flat, dtype=torch.float32).reshape(input_shape_list)
+                                    with torch.no_grad():
+                                        output = model(model_input)
+                                else:  # Transformer style - needs wavelength, flux, redshift
+                                    # Interpolate to 1024 points if needed (like transformer model)
+                                    if len(flux) != 1024:
+                                        x_old = np.linspace(0, 1, len(flux))
+                                        x_new = np.linspace(0, 1, 1024)
+                                        flux = np.interp(x_new, x_old, flux)
+                                        wavelength = np.interp(x_new, x_old, wavelength)
+
+                                    wavelength_tensor = torch.tensor(wavelength, dtype=torch.float32).unsqueeze(0)  # [1, 1024]
+                                    flux_tensor = torch.tensor(flux, dtype=torch.float32).unsqueeze(0)              # [1, 1024]
+                                    redshift_tensor = torch.tensor([[redshift]], dtype=torch.float32)               # [1, 1]
+
+                                    with torch.no_grad():
+                                        output = model(wavelength_tensor, flux_tensor, redshift_tensor)
+
+                                probs = torch.softmax(output, dim=-1).cpu().numpy()[0]
                                 idx_to_label = {v: k for k, v in class_map.items()}
+                                # Check if user wants RLAP calculation (note: user-uploaded models don't support RLAP calculation)
+                                calculate_rlap = processed_data.get('calculate_rlap', False)
+                                if calculate_rlap:
+                                    logger.info("RLAP calculation requested but not supported by user-uploaded models. Setting RLAP to None.")
+
                                 top_indices = np.argsort(probs)[::-1][:3]
                                 matches = []
                                 for idx in top_indices:
                                     class_name = idx_to_label.get(idx, f'unknown_class_{idx}')
                                     matches.append({
                                         'type': class_name,
+                                        'age': 'N/A',  # User models don't classify age
                                         'probability': float(probs[idx]),
                                         'redshift': float(processed_data.get('redshift', 0.0)),
-                                        'rlap': None,
+                                        'rlap': None,  # Not calculated for user-uploaded models (RLAP requires template matching)
                                         'reliable': bool(probs[idx] > 0.5)
                                     })
-                                best_match = matches[0] if matches else {}
+                                best_match = matches[0] if matches else {'type': 'Unknown', 'age': 'N/A', 'probability': 0.0}
                                 results[fname] = {
                                     "spectrum": processed_data,
                                     "classification": {
@@ -500,12 +575,14 @@ async def batch_process(
                                     "model_id": model_id
                                 }
                                 continue
-                            classification_results = classifier.classify(processed_data)
-                            results[fname] = {
-                                "spectrum": processed_data,
-                                "classification": classification_results,
-                                "model_type": model_type
-                            }
+                            # Use standard classifier for non-user-uploaded models
+                            if model_type != "user_uploaded":
+                                classification_results = classifier.classify(processed_data)
+                                results[fname] = {
+                                    "spectrum": processed_data,
+                                    "classification": classification_results,
+                                    "model_type": model_type
+                                }
                         except Exception as e:
                             results[fname] = {"error": str(e)}
                 except Exception as e:
@@ -526,16 +603,23 @@ async def batch_process_multiple(
     """
     try:
         logger.info("/api/batch-process-multiple endpoint called")
+        logger.info(f"Received model_id: {model_id}")
         parsed_params = json.loads(params) if params else {}
 
-        # Extract model type from parameters, default to 'dash'
-        model_type = parsed_params.get('modelType', 'dash')
-        if model_type not in ['dash', 'transformer']:
-            model_type = 'dash'  # Default to dash if invalid model type
-        logger.info(f"Using model type: {model_type}")
+        # Check if model_id is provided first (user-uploaded model)
+        if model_id:
+            logger.info(f"Using user-uploaded model: {model_id}")
+            model_type = "user_uploaded"  # Set model_type for user-uploaded models
+        else:
+            # Extract model type from parameters, default to 'dash'
+            model_type = parsed_params.get('modelType', 'dash')
+            if model_type not in ['dash', 'transformer']:
+                model_type = 'dash'  # Default to dash if invalid model type
+            logger.info(f"Using model type: {model_type}")
 
-        # Get the appropriate classifier
-        classifier = get_classifier(model_type)
+        # Get the appropriate classifier (only for non-user-uploaded models)
+        if model_type != "user_uploaded":
+            classifier = get_classifier(model_type)
 
         results = {}
 
@@ -556,8 +640,8 @@ async def batch_process_multiple(
                     max_wave=parsed_params.get('maxWave'),
                     calculate_rlap=parsed_params.get('calculateRlap', False)
                 )
-                # Use user-uploaded model if model_id is provided
-                if model_id:
+                # Use user-uploaded model if model_type is "user_uploaded"
+                if model_type == "user_uploaded":
                     logger.info(f"Using user-uploaded model: {model_id} for batch item {file.filename}")
                     model_base = os.path.join(USER_MODEL_DIR, model_id)
                     model_path = model_base + '.pth'
@@ -571,14 +655,42 @@ async def batch_process_multiple(
                     model = torch.jit.load(model_path, map_location='cpu')
                     model.eval()
                     flux = np.array(processed_data['y'])
-                    flat_size = np.prod(input_shape_list[1:])
-                    flux_flat = np.zeros(flat_size)
-                    n = min(len(flux), flat_size)
-                    flux_flat[:n] = flux[:n]
-                    model_input = torch.tensor(flux_flat, dtype=torch.float32).reshape(input_shape_list)
-                    with torch.no_grad():
-                        output = model(model_input)
-                        probs = torch.softmax(output, dim=-1).cpu().numpy()[0]
+                    wavelength = np.array(processed_data['x'])
+                    redshift = processed_data.get('redshift', 0.0)
+
+                    logger.info(f"User model input shape: {input_shape_list}")
+                    logger.info(f"Flux shape: {flux.shape}, Wavelength shape: {wavelength.shape}")
+
+                    # Handle different input shapes based on model type
+                    if len(input_shape_list) == 4:  # [batch, channels, height, width] - CNN style
+                        flat_size = np.prod(input_shape_list[1:])
+                        flux_flat = np.zeros(flat_size)
+                        n = min(len(flux), flat_size)
+                        flux_flat[:n] = flux[:n]
+                        model_input = torch.tensor(flux_flat, dtype=torch.float32).reshape(input_shape_list)
+                        with torch.no_grad():
+                            output = model(model_input)
+                    else:  # Transformer style - needs wavelength, flux, redshift
+                        # Interpolate to 1024 points if needed (like transformer model)
+                        if len(flux) != 1024:
+                            x_old = np.linspace(0, 1, len(flux))
+                            x_new = np.linspace(0, 1, 1024)
+                            flux = np.interp(x_new, x_old, flux)
+                            wavelength = np.interp(x_new, x_old, wavelength)
+
+                        wavelength_tensor = torch.tensor(wavelength, dtype=torch.float32).unsqueeze(0)  # [1, 1024]
+                        flux_tensor = torch.tensor(flux, dtype=torch.float32).unsqueeze(0)              # [1, 1024]
+                        redshift_tensor = torch.tensor([[redshift]], dtype=torch.float32)               # [1, 1]
+
+                        with torch.no_grad():
+                            output = model(wavelength_tensor, flux_tensor, redshift_tensor)
+
+                    probs = torch.softmax(output, dim=-1).cpu().numpy()[0]
+                    # Check if user wants RLAP calculation (note: user-uploaded models don't support RLAP calculation)
+                    calculate_rlap = processed_data.get('calculate_rlap', False)
+                    if calculate_rlap:
+                        logger.info("RLAP calculation requested but not supported by user-uploaded models. Setting RLAP to None.")
+
                     idx_to_label = {v: k for k, v in class_map.items()}
                     top_indices = np.argsort(probs)[::-1][:3]
                     matches = []
@@ -586,12 +698,13 @@ async def batch_process_multiple(
                         class_name = idx_to_label.get(idx, f'unknown_class_{idx}')
                         matches.append({
                             'type': class_name,
+                            'age': 'N/A',  # User models don't classify age
                             'probability': float(probs[idx]),
                             'redshift': float(processed_data.get('redshift', 0.0)),
-                            'rlap': None,
+                            'rlap': None,  # Not calculated for user-uploaded models (RLAP requires template matching)
                             'reliable': bool(probs[idx] > 0.5)
                         })
-                    best_match = matches[0] if matches else {}
+                    best_match = matches[0] if matches else {'type': 'Unknown', 'age': 'N/A', 'probability': 0.0}
                     results[file.filename] = {
                         "spectrum": processed_data,
                         "classification": {
@@ -603,12 +716,14 @@ async def batch_process_multiple(
                         "model_id": model_id
                     }
                     continue
-                classification_results = classifier.classify(processed_data)
-                results[file.filename] = {
-                    "spectrum": processed_data,
-                    "classification": classification_results,
-                    "model_type": model_type
-                }
+                # Use standard classifier for non-user-uploaded models
+                if model_type != "user_uploaded":
+                    classification_results = classifier.classify(processed_data)
+                    results[file.filename] = {
+                        "spectrum": processed_data,
+                        "classification": classification_results,
+                        "model_type": model_type
+                    }
             except Exception as e:
                 results[file.filename] = {"error": str(e)}
 

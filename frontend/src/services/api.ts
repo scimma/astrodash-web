@@ -86,14 +86,17 @@ class Api {
     };
     if (params.modelType) {
       jsonParams.modelType = params.modelType;
-    } else if (params.model_id) {
-      jsonParams.model_id = params.model_id;
     } else {
       jsonParams.modelType = 'dash';
     }
 
     console.log('API: Adding JSON params to form data:', jsonParams);
     formData.append('params', JSON.stringify(jsonParams));
+
+    // Add model_id as separate Form parameter if provided
+    if (params.model_id) {
+      formData.append('model_id', params.model_id);
+    }
 
     try {
       const response = await axios.post(`${API_BASE_URL}/process`, formData, {
@@ -148,6 +151,11 @@ class Api {
     };
 
     formData.append('params', JSON.stringify(paramsWithModel));
+
+    // Add model_id as separate Form parameter if provided
+    if (params.model_id) {
+      formData.append('model_id', params.model_id);
+    }
     try {
       const response = await axios.post(`${API_BASE_URL}/api/batch-process`, formData, {
         headers: {
@@ -176,6 +184,11 @@ class Api {
     };
 
     formData.append('params', JSON.stringify(paramsWithModel));
+
+    // Add model_id as separate Form parameter if provided
+    if (params.model_id) {
+      formData.append('model_id', params.model_id);
+    }
     try {
       const response = await axios.post(`${API_BASE_URL}/api/batch-process-multiple`, formData, {
         headers: {

@@ -76,6 +76,17 @@ const BatchPage: React.FC = () => {
     setError(null);
     setResults(null);
     try {
+      // Handle model selection properly
+      let modelType: 'dash' | 'transformer' | undefined = undefined;
+      let model_id: string | undefined = undefined;
+      if (selectedModel === 'dash' || selectedModel === 'transformer') {
+        modelType = selectedModel;
+      } else if (typeof selectedModel === 'object' && selectedModel.user) {
+        model_id = selectedModel.user;
+        // Explicitly set modelType to undefined when using user-uploaded model
+        modelType = undefined;
+      }
+
       const params = {
         smoothing,
         knownZ,
@@ -83,7 +94,8 @@ const BatchPage: React.FC = () => {
         minWave: parseInt(minWave),
         maxWave: parseInt(maxWave),
         calculateRlap,
-        modelType: selectedModel  // Pass the selected model
+        ...(modelType ? { modelType } : {}),
+        ...(model_id ? { model_id } : {}),
       };
 
       // Check if we have a zip file
@@ -100,7 +112,10 @@ const BatchPage: React.FC = () => {
       }
 
       // Log the model type used
-      console.log(`Batch classification completed using ${selectedModel} model`);
+      console.log('Selected model:', selectedModel);
+      console.log('Model type:', modelType);
+      console.log('Model ID:', model_id);
+      console.log(`Batch classification completed using ${typeof selectedModel === 'object' && selectedModel.user ? 'user-uploaded' : selectedModel} model`);
 
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Batch classification failed.');
@@ -150,11 +165,29 @@ const BatchPage: React.FC = () => {
         </Typography>
           {/* Model indicator */}
           <Chip
-            label={`${selectedModel === 'transformer' ? 'Transformer' : 'Dash'} Model`}
+            label={
+              typeof selectedModel === 'object' && selectedModel.user
+                ? 'User Model'
+                : `${selectedModel === 'transformer' ? 'Transformer' : 'Dash'} Model`
+            }
             sx={{
-              backgroundColor: selectedModel === 'transformer' ? 'rgba(255, 152, 0, 0.2)' : 'rgba(76, 175, 80, 0.2)',
-              color: selectedModel === 'transformer' ? '#ff9800' : '#4caf50',
-              border: `1px solid ${selectedModel === 'transformer' ? '#ff9800' : '#4caf50'}`,
+              backgroundColor: typeof selectedModel === 'object' && selectedModel.user
+                ? 'rgba(156, 39, 176, 0.2)'
+                : selectedModel === 'transformer'
+                  ? 'rgba(255, 152, 0, 0.2)'
+                  : 'rgba(76, 175, 80, 0.2)',
+              color: typeof selectedModel === 'object' && selectedModel.user
+                ? '#9c27b0'
+                : selectedModel === 'transformer'
+                  ? '#ff9800'
+                  : '#4caf50',
+              border: `1px solid ${
+                typeof selectedModel === 'object' && selectedModel.user
+                  ? '#9c27b0'
+                  : selectedModel === 'transformer'
+                    ? '#ff9800'
+                    : '#4caf50'
+              }`,
             }}
             size="small"
           />
