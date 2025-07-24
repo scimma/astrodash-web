@@ -1,4 +1,5 @@
 from typing import List, Optional
+from shared.utils.validators import validate_spectrum_data, validate_redshift
 
 class Spectrum:
     """
@@ -31,4 +32,10 @@ class Spectrum:
 
     def is_valid(self) -> bool:
         """Basic validation for spectrum data."""
-        return bool(self.x and self.y and len(self.x) == len(self.y))
+        try:
+            validate_spectrum_data(self.x, self.y)
+            if self.redshift is not None:
+                validate_redshift(self.redshift)
+            return True
+        except Exception:
+            return False
