@@ -4,29 +4,58 @@ import re
 import math
 from typing import Any, Dict, List, Tuple, Optional
 
-def prepare_log_wavelength_and_templates(processed_data: Dict[str, Any], template_filename: str = 'sn_and_host_templates.npz') -> Tuple[np.ndarray, np.ndarray, Dict[str, Any], float, int, float, float]:
+def prepare_log_wavelength_and_templates(
+    processed_data: Dict[str, List[float]],
+    template_filename: str = 'sn_and_host_templates.npz',
+    template_dir: str = None
+) -> Tuple[np.ndarray, np.ndarray, Dict[str, Any], float, int, float, float]:
     """
-    Prepare log-wavelength grid, interpolate input spectrum, and load templates.
-    Returns: log_wave, input_flux_log, snTemplates, dwlog, nw, w0, w1
+    Prepares log-wavelength grid and loads templates from .npz file.
+    Returns log_wave, input_flux_log, snTemplates, dwlog, nw, w0, w1.
     """
-    from config.settings import get_settings
-    settings = get_settings()
-    pars = settings  # Or load from a config or parameter file as needed
-    w0, w1, nw = 3500.0, 10000.0, 1024  # Defaults; override as needed
+    # Import here to avoid circular imports
+    from infrastructure.ml.dash_utils import get_training_parameters
+    
+    # Get training parameters (w0, w1, nw) from the DASH model
+    pars = get_training_parameters()
+    w0, w1, nw = pars['w0'], pars['w1'], pars['nw']
+    
+    # Create log-wavelength grid using training parameters
     dwlog = np.log(w1 / w0) / nw
     log_wave = w0 * np.exp(np.arange(nw) * dwlog)
-    # Find backend root and template path
-    backend_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../'))
-    template_path = os.path.join(backend_root, 'astrodash_models', template_filename)
+    
+    # Interpolate input spectrum to log-wavelength grid
+    x = np.array(processed_data["x"])
+    y = np.array(processed_data["y"])
+    input_flux_log = np.interp(log_wave, x, y, left=0, right=0)
+    
+    # Load templates
+    if template_dir is None:
+        # Use the same path resolution logic as get_training_parameters
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        # Go up from shared/utils to find the backend/astrodash_models directory
+        # Current path: prod_backend/app/shared/utils/
+        # Target path: backend/astrodash_models/
+        backend_dir = os.path.join(current_dir, '..', '..', '..', '..', 'backend')
+        template_dir = os.path.join(backend_dir, 'astrodash_models')
+        
+        # Verify the directory exists
+        if not os.path.exists(template_dir):
+            raise FileNotFoundError(f"Could not find astrodash_models directory at {template_dir}")
+    
+    template_path = os.path.join(template_dir, template_filename)
     data = np.load(template_path, allow_pickle=True)
     snTemplates_raw = data['snTemplates'].item()
     snTemplates = {str(k): v for k, v in snTemplates_raw.items()}
-    input_flux = np.array(processed_data['y'])
-    input_wave = np.array(processed_data['x'])
-    input_flux_log = np.interp(log_wave, input_wave, input_flux, left=0, right=0)
+    
     return log_wave, input_flux_log, snTemplates, dwlog, nw, w0, w1
 
-def get_templates_for_type_age(snTemplates: Dict[str, Any], sn_type: str, age_norm: str, log_wave: np.ndarray) -> Tuple[List[np.ndarray], List[str], List[Tuple[int, int]]]:
+def get_templates_for_type_age(
+    snTemplates: Any,
+    sn_type: str,
+    age_norm: str,
+    log_wave: np.ndarray
+) -> Tuple[List[np.ndarray], List[str], List[Tuple[int, int]]]:
     """
     Given snTemplates dict, SN type, normalized age bin, and log-wavelength grid,
     return template_fluxes, template_names, template_minmax_indexes for that type/age.
@@ -34,6 +63,7 @@ def get_templates_for_type_age(snTemplates: Dict[str, Any], sn_type: str, age_no
     template_fluxes = []
     template_names = []
     template_minmax_indexes = []
+    
     if sn_type in snTemplates:
         age_bin_keys = [str(k).strip() for k in snTemplates[sn_type].keys()]
         if age_norm.strip() in age_bin_keys:
@@ -52,15 +82,18 @@ def get_templates_for_type_age(snTemplates: Dict[str, Any], sn_type: str, age_no
                     template_fluxes.append(interp_flux)
                     template_names.append(f"{sn_type}:{age_norm}")
                     template_minmax_indexes.append((tmin, tmax))
+    
     return template_fluxes, template_names, template_minmax_indexes
 
-def get_nonzero_minmax(flux: np.ndarray) -> Tuple[int, int]:
-    """Return (min_index, max_index) of nonzero flux, or (0, len(flux)-1) if all zero."""
-    nonzero = np.where(flux != 0)[0]
+def get_nonzero_minmax(arr: np.ndarray) -> Tuple[int, int]:
+    """
+    Returns the min and max indices of nonzero values in a 1D array.
+    """
+    nonzero = np.nonzero(arr)[0]
     if len(nonzero) > 0:
         return nonzero[0], nonzero[-1]
     else:
-        return 0, len(flux) - 1
+        return 0, len(arr) - 1
 
 def normalize_age_bin(age: str) -> str:
     """Normalize age bin strings to 'N to M' format."""
@@ -123,6 +156,24 @@ def zero_non_overlap_part(array: np.ndarray, min_index: int, max_index: int, out
     sliced_array[0:min_index] = outer_val
     sliced_array[max_index:] = outer_val
     return sliced_array
+
+def interpolate_to_1024(arr: np.ndarray) -> np.ndarray:
+    """
+    Interpolate an array to 1024 points.
+    
+    Args:
+        arr: Input array to interpolate
+        
+    Returns:
+        Interpolated array with 1024 points
+    """
+    arr = np.asarray(arr)
+    if len(arr) == 1024:
+        return arr
+    x_old = np.linspace(0, 1, len(arr))
+    x_new = np.linspace(0, 1, 1024)
+    return np.interp(x_new, x_old, arr)
+
 
 def limit_wavelength_range(wave: np.ndarray, flux: np.ndarray, min_wave: Optional[float], max_wave: Optional[float]) -> np.ndarray:
     """Zero out flux outside the [min_wave, max_wave] range."""

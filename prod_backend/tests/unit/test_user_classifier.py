@@ -12,8 +12,6 @@ if APP_PATH not in sys.path:
 from domain.models.spectrum import Spectrum
 from infrastructure.ml.classifiers.user_classifier import UserClassifier
 
-USER_MODEL_ID = "932eed3d-4d0e-4594-a490-5fd4f5e7a344"
-
 @pytest.fixture
 def mock_cnn_user_classifier():
     with patch.object(UserClassifier, "_load_model_and_metadata", lambda self: None):

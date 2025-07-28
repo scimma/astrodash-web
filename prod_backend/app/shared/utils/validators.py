@@ -24,7 +24,7 @@ def validate_redshift(redshift: Any) -> float:
         raise ValidationError("Invalid redshift value.")
 
 
-def validate_file_extension(filename: str, allowed: List[str]) -> None:
+def validate_file_extension(filename: str, allowed: List[str] = [".dat", ".lnw", ".txt"]) -> None:
     """Raise ValidationError if file extension is not allowed."""
     if not any(filename.lower().endswith(ext) for ext in allowed):
         raise ValidationError(f"File extension not allowed. Allowed: {allowed}")

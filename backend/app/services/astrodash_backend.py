@@ -343,7 +343,6 @@ def get_valid_sn_types_and_age_bins(npz_path):
     logger.info(f"Valid SN types and age bins loaded: {list(valid.keys())}")
     return valid
 
-
 __all__ = [
     'get_training_parameters', 'BestTypesListSingleRedshift', 'LoadInputSpectra',
     'classification_split', 'combined_prob', 'normalise_spectrum',
