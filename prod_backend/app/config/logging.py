@@ -2,7 +2,7 @@ import logging
 import logging.config
 from logging.handlers import RotatingFileHandler
 import os
-from config.settings import get_settings, Settings
+from app.config.settings import get_settings, Settings
 
 def init_logging(config: Settings = None):
     config = config or get_settings()

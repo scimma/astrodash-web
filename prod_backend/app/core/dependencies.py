@@ -1,7 +1,15 @@
 from functools import lru_cache
 from fastapi import Depends
-from config.settings import Settings, get_settings
+from app.config.settings import Settings, get_settings
 import logging
+from typing import Generator
+from sqlalchemy.orm import Session
+from app.infrastructure.database.session import get_db
+from app.infrastructure.database.sqlalchemy_spectrum_repository import SQLAlchemySpectrumRepository
+from app.infrastructure.storage.file_spectrum_repository import OSCSpectrumRepository
+from app.infrastructure.ml.model_factory import ModelFactory
+from app.domain.services.template_analysis_service import TemplateAnalysisService
+from app.domain.repositories.spectrum_repository import create_spectrum_template_handler
 
 # Settings dependency (singleton)
 @lru_cache()
@@ -15,12 +23,12 @@ def get_logger(name: str = "app") -> logging.Logger:
     return logging.getLogger(name)
 
 # Example: Service/repository dependencies
-from infrastructure.storage.file_storage import FileStorage
-from infrastructure.storage.file_spectrum_repository import FileSpectrumRepository, OSCSpectrumRepository
-from infrastructure.ml.model_factory import ModelFactory
-from infrastructure.database.session import get_db
-from infrastructure.database.sqlalchemy_model_repository import SQLAlchemyModelRepository
-from infrastructure.database.sqlalchemy_spectrum_repository import SQLAlchemySpectrumRepository
+from app.infrastructure.storage.file_storage import FileStorage
+from app.infrastructure.storage.file_spectrum_repository import FileSpectrumRepository
+from app.infrastructure.ml.model_factory import ModelFactory
+from app.infrastructure.database.session import get_db
+from app.infrastructure.database.sqlalchemy_model_repository import SQLAlchemyModelRepository
+from app.infrastructure.database.sqlalchemy_spectrum_repository import SQLAlchemySpectrumRepository
 
 # File storage dependency
 def get_file_storage(settings: Settings = Depends(get_app_settings)) -> FileStorage:
@@ -42,5 +50,12 @@ def get_sqlalchemy_model_repository(db=Depends(get_db)) -> SQLAlchemyModelReposi
     return SQLAlchemyModelRepository(db)
 
 # SQLAlchemy spectrum repository dependency
-def get_sqlalchemy_spectrum_repository(db=Depends(get_db)) -> SQLAlchemySpectrumRepository:
+def get_sqlalchemy_spectrum_repository(db: Session = Depends(get_db)) -> SQLAlchemySpectrumRepository:
+    """Dependency to get SQLAlchemy spectrum repository."""
     return SQLAlchemySpectrumRepository(db)
+
+def get_template_analysis_service() -> TemplateAnalysisService:
+    """Dependency to get template analysis service."""
+    # Create template handler for DASH model (which has templates)
+    template_handler = create_spectrum_template_handler('dash')
+    return TemplateAnalysisService(template_handler)

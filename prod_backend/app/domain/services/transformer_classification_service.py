@@ -2,8 +2,8 @@ import logging
 from typing import Any, Dict, Optional
 import numpy as np
 import torch
-from shared.utils.helpers import interpolate_to_1024
-from infrastructure.ml.classifiers.architectures import spectraTransformerEncoder
+from app.shared.utils.helpers import interpolate_to_1024
+from app.infrastructure.ml.classifiers.architectures import spectraTransformerEncoder
 import os
 
 logger = logging.getLogger(__name__)

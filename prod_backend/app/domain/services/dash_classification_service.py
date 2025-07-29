@@ -1,14 +1,14 @@
 import logging
 from typing import Any, Dict, Optional
 import numpy as np
-from infrastructure.ml.dash_utils import (
+from app.infrastructure.ml.dash_utils import (
     load_training_parameters, LoadInputSpectra, BestTypesListSingleRedshift, combined_prob, classification_split
 )
-from domain.repositories.spectrum_repository import create_spectrum_template_handler
-from shared.utils.helpers import (
+from app.domain.repositories.spectrum_repository import create_spectrum_template_handler
+from app.shared.utils.helpers import (
     prepare_log_wavelength_and_templates, get_templates_for_type_age, get_nonzero_minmax, normalize_age_bin
 )
-from shared.utils.redshift import get_median_redshift
+from app.shared.utils.redshift import get_median_redshift
 
 class DashClassificationService:
     """
@@ -236,7 +236,7 @@ class DashClassificationService:
         Compute RLap score for a single template.
         """
         # Mean-zero both input and template
-        from shared.utils.redshift import mean_zero_spectra
+        from app.shared.utils.redshift import mean_zero_spectra
         input_flux_proc = mean_zero_spectra(input_flux, 0, nw - 1, nw)
         template_flux_proc = mean_zero_spectra(template_flux, template_minmax_index[0], template_minmax_index[1], nw)
         # Cross-correlation

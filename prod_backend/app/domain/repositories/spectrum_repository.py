@@ -2,7 +2,8 @@ from abc import ABC, abstractmethod
 from typing import Optional, Any, List, Tuple, Dict
 import numpy as np
 import logging
-from domain.models.spectrum import Spectrum
+from app.domain.models.spectrum import Spectrum
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -41,269 +42,182 @@ class SpectrumRepository(ABC):
 
 class SpectrumTemplateInterface(ABC):
     """
-    Abstract interface for spectrum template handling.
-    Different implementations can handle different template formats and sources.
+    Abstract base class for spectrum template handling.
+    Defines the contract for template loading and validation.
     """
 
     @abstractmethod
-    def load_template_spectrum(self, sn_type: str, age_bin: str, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
+    async def get_template_spectrum(self, sn_type: str, age_bin: str) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Load a single template spectrum for given SN type and age bin.
+        Get template spectrum for a specific SN type and age bin.
 
         Args:
-            sn_type: Supernova type (e.g., 'Ia', 'Ib', 'II')
-            age_bin: Age bin string (e.g., '0 to 5')
-            **kwargs: Additional parameters specific to implementation
+            sn_type: Supernova type (e.g., 'Ia-norm', 'Ib-norm')
+            age_bin: Age bin (e.g., '2 to 6', '-10 to -6')
 
         Returns:
-            Tuple of (wavelength_array, flux_array)
-
-        Raises:
-            ValueError: If template not found or invalid
+            Tuple of (wavelength, flux) arrays
         """
         pass
 
     @abstractmethod
-    def get_templates_for_type_age(
-        self,
-        sn_type: str,
-        age_bin: str,
-        wavelength_grid: np.ndarray,
-        **kwargs
-    ) -> Tuple[List[np.ndarray], List[str], List[Tuple[int, int]]]:
+    async def get_all_templates(self) -> Dict[str, Any]:
         """
-        Get multiple template spectra for given SN type and age bin, interpolated to wavelength grid.
+        Get all available templates.
+
+        Returns:
+            Dictionary containing all template data
+        """
+        pass
+
+    @abstractmethod
+    async def validate_template(self, sn_type: str, age_bin: str) -> bool:
+        """
+        Validate if a template exists for the given SN type and age bin.
 
         Args:
             sn_type: Supernova type
-            age_bin: Age bin string
-            wavelength_grid: Target wavelength grid for interpolation
-            **kwargs: Additional parameters specific to implementation
+            age_bin: Age bin
 
         Returns:
-            Tuple of (template_fluxes, template_names, template_minmax_indexes)
-        """
-        pass
-
-    @abstractmethod
-    def get_valid_sn_types_and_age_bins(self, **kwargs) -> Dict[str, List[str]]:
-        """
-        Get all valid SN types and their corresponding age bins.
-
-        Args:
-            **kwargs: Additional parameters specific to implementation
-
-        Returns:
-            Dictionary mapping SN types to lists of valid age bins
+            True if template exists and is valid
         """
         pass
 
 
 class DASHSpectrumTemplate(SpectrumTemplateInterface):
     """
-    DASH-specific implementation of spectrum template handling.
-    Works with DASH's nested template structure in .npz files.
+    DASH-specific template handler.
+    Loads templates from the DASH model's template file.
     """
 
-    def __init__(self, npz_path: str):
-        """
-        Initialize with path to DASH template file.
+    def __init__(self, template_path: str):
+        self.template_path = template_path
+        self._templates = None
+        logger.info(f"DASHSpectrumTemplate initialized with path: {template_path}")
 
-        Args:
-            npz_path: Path to .npz file containing DASH templates
-        """
-        self.npz_path = npz_path
-        self._templates_cache = None
+    async def get_template_spectrum(self, sn_type: str, age_bin: str) -> Tuple[np.ndarray, np.ndarray]:
+        """Get template spectrum for DASH model."""
+        try:
+            templates = await self._load_templates()
 
-    def _load_templates(self) -> Dict[str, Any]:
-        """Load and cache templates from npz file."""
-        if self._templates_cache is None:
-            data = np.load(self.npz_path, allow_pickle=True)
-            snTemplates_raw = data['snTemplates'].item() if 'snTemplates' in data else data['arr_0'].item()
-            self._templates_cache = {str(k): v for k, v in snTemplates_raw.items()}
-        return self._templates_cache
+            if sn_type not in templates:
+                raise ValueError(f"SN type '{sn_type}' not found in templates")
 
-    def load_template_spectrum(self, sn_type: str, age_bin: str, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Load a single template spectrum for given SN type and age bin.
+            if age_bin not in templates[sn_type]:
+                raise ValueError(f"Age bin '{age_bin}' not found for SN type '{sn_type}'")
 
-        Args:
-            sn_type: Supernova type (e.g., 'Ia', 'Ib', 'II')
-            age_bin: Age bin string (e.g., '0 to 5')
-            **kwargs: Additional parameters (not used in DASH implementation)
+            entry = templates[sn_type][age_bin]
+            sn_info = entry.get('snInfo', None)
 
-        Returns:
-            Tuple of (wavelength_array, flux_array)
+            if not isinstance(sn_info, np.ndarray) or sn_info.shape[0] == 0:
+                raise ValueError(f"No template spectrum available for {sn_type} / {age_bin}")
 
-        Raises:
-            ValueError: If template not found or invalid
-        """
-        logger.info(f"Loading template spectrum for SN type {sn_type}, age bin {age_bin}")
+            # Get the first template (placeholder for now)
+            template = sn_info[0]
+            wave = template[0]
+            flux = template[1]
 
-        snTemplates = self._load_templates()
+            logger.info(f"Template spectrum loaded for {sn_type} / {age_bin}")
+            return wave, flux
 
-        if not isinstance(snTemplates[sn_type], dict):
-            snTemplates[sn_type] = dict(snTemplates[sn_type])
+        except Exception as e:
+            logger.error(f"Error loading template spectrum: {e}")
+            raise
 
-        if age_bin not in snTemplates[sn_type].keys():
-            logger.error(f"Age bin '{age_bin}' not found for SN type '{sn_type}'.")
-            raise ValueError(f"Age bin '{age_bin}' not found for SN type '{sn_type}'.")
+    async def get_all_templates(self) -> Dict[str, Any]:
+        """Get all DASH templates."""
+        try:
+            return await self._load_templates()
+        except Exception as e:
+            logger.error(f"Error loading all templates: {e}")
+            raise
 
-        snInfo = snTemplates[sn_type][age_bin].get('snInfo', None)
-        if not isinstance(snInfo, np.ndarray) or snInfo.shape[0] == 0:
-            logger.error(f"No template spectrum available for SN type '{sn_type}' and age bin '{age_bin}'.")
-            raise ValueError(f"No template spectrum available for SN type '{sn_type}' and age bin '{age_bin}'.")
+    async def validate_template(self, sn_type: str, age_bin: str) -> bool:
+        """Validate DASH template."""
+        try:
+            templates = await self._load_templates()
+            return (sn_type in templates and
+                   age_bin in templates[sn_type] and
+                   self._is_valid_entry(templates[sn_type][age_bin]))
+        except Exception as e:
+            logger.error(f"Error validating template: {e}")
+            return False
 
-        template = snInfo[0]  # placeholder for now
-        wave = template[0]
-        flux = template[1]
+    async def _load_templates(self) -> Dict[str, Any]:
+        """Load templates from app.file."""
+        if self._templates is None:
+            try:
+                data = np.load(self.template_path, allow_pickle=True)
+                sn_templates_raw = data['snTemplates'].item()
+                self._templates = {str(k): v for k, v in sn_templates_raw.items()}
+                logger.info(f"Templates loaded: {list(self._templates.keys())}")
+            except Exception as e:
+                logger.error(f"Error loading templates from {self.template_path}: {e}")
+                raise
 
-        logger.info(f"Template spectrum loaded for {sn_type} / {age_bin}")
-        return wave, flux
+        return self._templates
 
-    def get_templates_for_type_age(
-        self,
-        sn_type: str,
-        age_bin: str,
-        wavelength_grid: np.ndarray,
-        **kwargs
-    ) -> Tuple[List[np.ndarray], List[str], List[Tuple[int, int]]]:
-        """
-        Get multiple template spectra for given SN type and age bin.
-
-        This implementation handles DASH's nested template structure where multiple
-        templates can exist for a single type/age combination.
-
-        Args:
-            sn_type: Supernova type
-            age_bin: Age bin string
-            wavelength_grid: Target wavelength grid for interpolation
-            **kwargs: Additional parameters (not used in DASH implementation)
-
-        Returns:
-            Tuple of (template_fluxes, template_names, template_minmax_indexes)
-        """
-        snTemplates = self._load_templates()
-        template_fluxes = []
-        template_names = []
-        template_minmax_indexes = []
-
-        if sn_type in snTemplates:
-            age_bin_keys = [str(k).strip() for k in snTemplates[sn_type].keys()]
-            if age_bin.strip() in age_bin_keys:
-                real_key = [k for k in snTemplates[sn_type].keys() if str(k).strip() == age_bin.strip()][0]
-                snInfo = snTemplates[sn_type][real_key].get('snInfo', None)
-                if isinstance(snInfo, np.ndarray) and snInfo.shape[0] > 0:
-                    for i in range(snInfo.shape[0]):
-                        template_wave = snInfo[i][0]
-                        template_flux = snInfo[i][1]
-                        interp_flux = np.interp(wavelength_grid, template_wave, template_flux, left=0, right=0)
-                        nonzero = np.where(interp_flux != 0)[0]
-                        if len(nonzero) > 0:
-                            tmin, tmax = nonzero[0], nonzero[-1]
-                        else:
-                            tmin, tmax = 0, len(interp_flux) - 1
-                        template_fluxes.append(interp_flux)
-                        template_names.append(f"{sn_type}:{age_bin}")
-                        template_minmax_indexes.append((tmin, tmax))
-
-        return template_fluxes, template_names, template_minmax_indexes
-
-    def get_valid_sn_types_and_age_bins(self, **kwargs) -> Dict[str, List[str]]:
-        """
-        Get all valid SN types and their corresponding age bins.
-
-        Args:
-            **kwargs: Additional parameters (not used in DASH implementation)
-
-        Returns:
-            Dictionary mapping SN types to lists of valid age bins
-        """
-        snTemplates = self._load_templates()
-        valid = {}
-
-        for sn_type, age_bins in snTemplates.items():
-            valid_bins = []
-            for age_bin, entry in age_bins.items():
-                snInfo = entry.get('snInfo', None)
-                if (
-                    isinstance(snInfo, np.ndarray) and
-                    snInfo.shape and
-                    len(snInfo.shape) == 2 and
-                    snInfo.shape[0] > 0 and
-                    snInfo.shape[1] == 4
-                ):
-                    valid_bins.append(age_bin)
-            if valid_bins:
-                valid[sn_type] = valid_bins
-
-        logger.info(f"Valid SN types and age bins loaded: {list(valid.keys())}")
-        return valid
-
-
-
+    def _is_valid_entry(self, entry: Any) -> bool:
+        """Check if template entry is valid."""
+        try:
+            sn_info = entry.get('snInfo', None)
+            return (isinstance(sn_info, np.ndarray) and
+                   sn_info.shape and
+                   len(sn_info.shape) == 2 and
+                   sn_info.shape[0] > 0 and
+                   sn_info.shape[1] == 4)
+        except Exception:
+            return False
 
 
 class TransformerSpectrumTemplate(SpectrumTemplateInterface):
     """
-    Placeholder implementation for transformer-based spectrum templates.
-    To be implemented when transformer templates are available.
+    Transformer-specific template handler.
+    For now, returns empty templates as Transformer doesn't use traditional templates.
     """
 
-    def __init__(self, model_path: str):
-        """
-        Initialize with path to transformer model.
+    def __init__(self):
+        logger.info("TransformerSpectrumTemplate initialized")
 
-        Args:
-            model_path: Path to transformer model
-        """
-        self.model_path = model_path
-        logger.warning("TransformerSpectrumTemplate is a placeholder implementation")
+    async def get_template_spectrum(self, sn_type: str, age_bin: str) -> Tuple[np.ndarray, np.ndarray]:
+        """Get template spectrum for Transformer model (not supported)."""
+        raise NotImplementedError("Transformer model doesn't use traditional templates")
 
-    def load_template_spectrum(self, sn_type: str, age_bin: str, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
-        """Placeholder - to be implemented when transformer templates are available."""
-        raise NotImplementedError("Transformer spectrum templates not yet implemented")
+    async def get_all_templates(self) -> Dict[str, Any]:
+        """Get all Transformer templates (empty for now)."""
+        return {}
 
-    def get_templates_for_type_age(
-        self,
-        sn_type: str,
-        age_bin: str,
-        wavelength_grid: np.ndarray,
-        **kwargs
-    ) -> Tuple[List[np.ndarray], List[str], List[Tuple[int, int]]]:
-        """Placeholder - to be implemented when transformer templates are available."""
-        raise NotImplementedError("Transformer spectrum templates not yet implemented")
-
-    def get_valid_sn_types_and_age_bins(self, **kwargs) -> Dict[str, List[str]]:
-        """Placeholder - to be implemented when transformer templates are available."""
-        raise NotImplementedError("Transformer spectrum templates not yet implemented")
+    async def validate_template(self, sn_type: str, age_bin: str) -> bool:
+        """Validate Transformer template (always False)."""
+        return False
 
 
-def create_spectrum_template_handler(template_type: str, **kwargs) -> SpectrumTemplateInterface:
+def create_spectrum_template_handler(model_type: str, template_path: Optional[str] = None) -> SpectrumTemplateInterface:
     """
-    Factory function to create appropriate spectrum template handler.
+    Factory function to create appropriate template handler.
 
     Args:
-        template_type: Type of template handler ('dash', 'transformer', etc.)
-        **kwargs: Parameters specific to the template type
+        model_type: Type of model ('dash', 'transformer')
+        template_path: Path to template file (required for DASH)
 
     Returns:
-        Appropriate SpectrumTemplateInterface implementation
-
-    Raises:
-        ValueError: If template_type is not supported or required parameters missing
+        Appropriate template handler instance
     """
-    template_type = template_type.lower()
+    if model_type == 'dash':
+        if not template_path:
+            # Default template path
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            backend_dir = os.path.join(current_dir, '..', '..', '..', '..', 'backend')
+            template_path = os.path.join(backend_dir, 'astrodash_models', 'sn_and_host_templates.npz')
 
-    if template_type == 'dash':
-        if 'npz_path' not in kwargs:
-            raise ValueError("DASH template handler requires 'npz_path' parameter")
-        return DASHSpectrumTemplate(kwargs['npz_path'])
+        if not os.path.exists(template_path):
+            raise FileNotFoundError(f"Template file not found: {template_path}")
 
-    elif template_type == 'transformer':
-        if 'model_path' not in kwargs:
-            raise ValueError("Transformer template handler requires 'model_path' parameter")
-        return TransformerSpectrumTemplate(kwargs['model_path'])
+        return DASHSpectrumTemplate(template_path)
+
+    elif model_type == 'transformer':
+        return TransformerSpectrumTemplate()
 
     else:
-        raise ValueError(f"Unsupported template type: {template_type}")
+        raise ValueError(f"Unsupported model type: {model_type}")

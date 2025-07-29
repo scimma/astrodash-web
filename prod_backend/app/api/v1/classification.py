@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query, Depends
-from shared.schemas.spectrum import SpectrumSchema
-from core.dependencies import get_app_settings
+from app.shared.schemas.spectrum import SpectrumSchema
+from app.core.dependencies import get_app_settings
 
 router = APIRouter()
 

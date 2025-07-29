@@ -2,11 +2,11 @@ import os
 import torch
 import numpy as np
 from typing import Any, Optional
-from infrastructure.ml.classifiers.base import BaseClassifier
-from infrastructure.ml.processors.data_processor import DashSpectrumProcessor
-from infrastructure.ml.classifiers.architectures import AstroDashPyTorchNet
+from app.infrastructure.ml.classifiers.base import BaseClassifier
+from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor
+from app.infrastructure.ml.classifiers.architectures import AstroDashPyTorchNet
 import logging
-from config.settings import get_settings, Settings
+from app.config.settings import get_settings, Settings
 
 logger = logging.getLogger("dash_classifier")
 

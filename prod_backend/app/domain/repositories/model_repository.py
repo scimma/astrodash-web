@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Optional, List
-from domain.models.user_model import UserModel
+from app.domain.models.user_model import UserModel
 
 class ModelRepository(ABC):
     """

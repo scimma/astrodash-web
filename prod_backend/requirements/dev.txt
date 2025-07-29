@@ -1,1 +1,15 @@
-# Dev requirements will go here
+-r base.txt
+
+# Development and debugging
+ipython>=8.0.0
+ipdb>=0.13.0
+pre-commit>=3.0.0
+
+# Additional testing tools
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+factory-boy>=3.2.0
+
+# Documentation
+mkdocs>=1.5.0
+mkdocs-material>=9.0.0

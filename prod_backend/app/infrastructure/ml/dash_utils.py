@@ -4,7 +4,7 @@ import logging
 from typing import Any, Dict, List, Tuple, Union
 import numpy as np
 import torch
-from infrastructure.ml.classifiers.architectures import AstroDashPyTorchNet
+from app.infrastructure.ml.classifiers.architectures import AstroDashPyTorchNet
 
 # Existing utility
 
@@ -114,7 +114,7 @@ class LoadInputSpectra:
         self.type_names_list = CreateLabels(n_types, min_age, max_age, age_bin_size, type_list).type_names_list()
         self.n_bins = len(self.type_names_list)
         # Use DashSpectrumProcessor for preprocessing
-        from infrastructure.ml.processors.data_processor import DashSpectrumProcessor
+        from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor
         processor = DashSpectrumProcessor(w0, w1, self.nw)
         logger = logging.getLogger("dash_utils")
         logger.info(f"Loading and processing input spectra. z={z}, smooth={smooth}, min_wave={min_wave}, max_wave={max_wave}")

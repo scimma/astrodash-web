@@ -14,7 +14,7 @@ def prepare_log_wavelength_and_templates(
     Returns log_wave, input_flux_log, snTemplates, dwlog, nw, w0, w1.
     """
     # Import here to avoid circular imports
-    from infrastructure.ml.dash_utils import get_training_parameters
+    from app.infrastructure.ml.dash_utils import get_training_parameters
     
     # Get training parameters (w0, w1, nw) from the DASH model
     pars = get_training_parameters()

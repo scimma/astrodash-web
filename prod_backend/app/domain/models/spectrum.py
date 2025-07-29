@@ -1,5 +1,5 @@
 from typing import List, Optional
-from shared.utils.validators import validate_spectrum_data, validate_redshift
+from app.shared.utils.validators import validate_spectrum_data, validate_redshift
 
 class Spectrum:
     """

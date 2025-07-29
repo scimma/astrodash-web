@@ -1,8 +1,8 @@
 from typing import Optional
-from infrastructure.ml.classifiers.base import BaseClassifier
-from infrastructure.ml.classifiers.dash_classifier import DashClassifier
-from infrastructure.ml.classifiers.transformer_classifier import TransformerClassifier
-from infrastructure.ml.classifiers.user_classifier import UserClassifier
+from app.infrastructure.ml.classifiers.base import BaseClassifier
+from app.infrastructure.ml.classifiers.dash_classifier import DashClassifier
+from app.infrastructure.ml.classifiers.transformer_classifier import TransformerClassifier
+from app.infrastructure.ml.classifiers.user_classifier import UserClassifier
 
 class ModelFactory:
     """

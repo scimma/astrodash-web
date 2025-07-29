@@ -3,9 +3,9 @@ import json
 import torch
 import numpy as np
 from typing import Any, Optional
-from infrastructure.ml.classifiers.base import BaseClassifier
+from app.infrastructure.ml.classifiers.base import BaseClassifier
 import logging
-from config.settings import get_settings, Settings
+from app.config.settings import get_settings, Settings
 
 logger = logging.getLogger("user_classifier")
 

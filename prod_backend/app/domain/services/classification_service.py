@@ -1,8 +1,8 @@
 from typing import Optional
-from domain.models.spectrum import Spectrum
-from domain.models.classification import Classification
-from infrastructure.ml.model_factory import ModelFactory
-from config.settings import Settings, get_settings
+from app.domain.models.spectrum import Spectrum
+from app.domain.models.classification import Classification
+from app.infrastructure.ml.model_factory import ModelFactory
+from app.config.settings import Settings, get_settings
 
 class ClassificationService:
     def __init__(self, model_factory: ModelFactory, settings: Optional[Settings] = None):

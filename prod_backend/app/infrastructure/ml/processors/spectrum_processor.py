@@ -6,8 +6,8 @@ import os
 import sys
 import json
 from collections import OrderedDict
-from urllib.request import urlopen
-from urllib.error import URLError
+from app.urllib.request import urlopen
+from app.urllib.error import URLError
 # NOTE: You will need to adapt the following import to your new architecture
 # from .astrodash_backend import (
 #     get_training_parameters, AgeBinning, BestTypesListSingleRedshift, LoadInputSpectra,
@@ -148,7 +148,7 @@ class SpectrumProcessor:
         try:
             import ssl
             context = ssl._create_unverified_context()
-            from urllib.request import urlopen
+            from app.urllib.request import urlopen
             response = urlopen(f"{osc_base_url}{obj_name}/spectra/time+data", context=context)
             data = json.loads(response.read(), object_pairs_hook=OrderedDict)
             spectrum_data = data[next(iter(data))]['spectra'][0][1]

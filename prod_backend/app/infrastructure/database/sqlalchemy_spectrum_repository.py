@@ -1,8 +1,8 @@
 from typing import Optional, Any
 from sqlalchemy.orm import Session
-from domain.repositories.spectrum_repository import SpectrumRepository
-from domain.models.spectrum import Spectrum
-from infrastructure.database.models import SpectrumDB
+from app.domain.repositories.spectrum_repository import SpectrumRepository
+from app.domain.models.spectrum import Spectrum
+from app.infrastructure.database.models import SpectrumDB
 from datetime import datetime
 import uuid
 

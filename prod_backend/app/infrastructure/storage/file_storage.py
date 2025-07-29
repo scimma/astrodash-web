@@ -1,4 +1,4 @@
-from config.settings import get_settings, Settings
+from app.config.settings import get_settings, Settings
 import os
 from typing import Optional, List
 

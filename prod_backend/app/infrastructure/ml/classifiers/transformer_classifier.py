@@ -2,11 +2,11 @@ import os
 import torch
 import numpy as np
 from typing import Any, Optional, Dict
-from infrastructure.ml.classifiers.base import BaseClassifier
-from infrastructure.ml.processors.data_processor import TransformerSpectrumProcessor
-from domain.services.transformer_classification_service import TransformerClassificationService
+from app.infrastructure.ml.classifiers.base import BaseClassifier
+from app.infrastructure.ml.processors.data_processor import TransformerSpectrumProcessor
+from app.domain.services.transformer_classification_service import TransformerClassificationService
 import logging
-from config.settings import get_settings, Settings
+from app.config.settings import get_settings, Settings
 
 logger = logging.getLogger("transformer_classifier")
 

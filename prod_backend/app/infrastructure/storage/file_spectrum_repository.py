@@ -1,22 +1,22 @@
 from typing import Optional, Any
-from domain.models.spectrum import Spectrum
-from domain.repositories.spectrum_repository import SpectrumRepository
-from infrastructure.ml.processors.data_processor import SpectrumProcessor
-from config.settings import get_settings, Settings
+from app.domain.models.spectrum import Spectrum
+from app.domain.repositories.spectrum_repository import SpectrumRepository
+from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor
+from app.config.settings import get_settings, Settings
 import os
 import json
 import uuid
 import httpx
-from shared.utils.validators import validate_spectrum_data, validate_redshift
+from app.shared.utils.validators import validate_spectrum_data, validate_redshift
 
 class FileSpectrumRepository(SpectrumRepository):
     """
     File-based repository for spectra. Stores spectra as JSON files in a directory.
-    Uses SpectrumProcessor to parse files.
+    Uses DashSpectrumProcessor to parse files.
     """
     def __init__(self, config: Settings = None):
         self.config = config or get_settings()
-        self.processor = SpectrumProcessor()
+        self.processor = DashSpectrumProcessor(w0=4000, w1=9000, nw=1024)
         self.storage_dir = os.path.join(self.config.storage_dir, "spectra")
         os.makedirs(self.storage_dir, exist_ok=True)
 
@@ -95,7 +95,7 @@ class OSCSpectrumRepository(SpectrumRepository):
     """
     def __init__(self, config: Settings = None):
         self.config = config or get_settings()
-        self.processor = SpectrumProcessor()
+        self.processor = DashSpectrumProcessor(w0=4000, w1=9000, nw=1024)
         self.osc_api_url = self.config.osc_api_url
 
     async def save(self, spectrum: Spectrum) -> Spectrum:

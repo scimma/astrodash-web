@@ -1,7 +1,7 @@
 from typing import Any, Optional
-from domain.models.spectrum import Spectrum
-from domain.repositories.spectrum_repository import SpectrumRepository
-from config.settings import Settings, get_settings
+from app.domain.models.spectrum import Spectrum
+from app.domain.repositories.spectrum_repository import SpectrumRepository
+from app.config.settings import Settings, get_settings
 
 class SpectrumService:
     def __init__(self, file_repo: SpectrumRepository, osc_repo: SpectrumRepository, settings: Optional[Settings] = None):

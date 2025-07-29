@@ -1,10 +1,10 @@
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy.future import select
-from domain.repositories.model_repository import ModelRepository
-from domain.models.user_model import UserModel
-from infrastructure.database.models import UserModelDB
-from core.exceptions import ModelNotFoundException
+from app.domain.repositories.model_repository import ModelRepository
+from app.domain.models.user_model import UserModel
+from app.infrastructure.database.models import UserModelDB
+from app.core.exceptions import ModelNotFoundException
 import asyncio
 
 class SQLAlchemyModelRepository(ModelRepository):
