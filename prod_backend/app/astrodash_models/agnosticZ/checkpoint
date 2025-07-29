@@ -1,2 +1,0 @@
-model_checkpoint_path: "/mimsy/danmuth/DASH/DASH/dash/data_files_new_train100_agnosticZ/tensorflow_model.ckpt"
-all_model_checkpoint_paths: "/mimsy/danmuth/DASH/DASH/dash/data_files_new_train100_agnosticZ/tensorflow_model.ckpt"
