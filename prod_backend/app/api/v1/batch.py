@@ -85,7 +85,8 @@ async def batch_process(
             logger.info(f"Processing zip file: {zip_file.filename}")
             input_files = zip_file
         else:
-            logger.info(f"Processing {len(files)} individual files")
+            file_count = len(files) if files else 0
+            logger.info(f"Processing {file_count} individual files")
             input_files = files
 
         # Process the batch

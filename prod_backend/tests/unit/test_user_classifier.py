@@ -11,11 +11,18 @@ if APP_PATH not in sys.path:
 
 from domain.models.spectrum import Spectrum
 from infrastructure.ml.classifiers.user_classifier import UserClassifier
+from config.settings import Settings
 
 @pytest.fixture
-def mock_cnn_user_classifier():
+def mock_settings():
+    settings = Mock(spec=Settings)
+    settings.user_model_dir = "/fake/user/models"
+    return settings
+
+@pytest.fixture
+def mock_cnn_user_classifier(mock_settings):
     with patch.object(UserClassifier, "_load_model_and_metadata", lambda self: None):
-        classifier = UserClassifier(user_model_id="dummy", config={})
+        classifier = UserClassifier(user_model_id="dummy", config=mock_settings)
         classifier.model = Mock()
         classifier.class_map = {"Ia": 0, "II": 1}
         classifier.input_shape = [1, 1, 32, 32]
@@ -26,9 +33,9 @@ def mock_cnn_user_classifier():
         return classifier
 
 @pytest.fixture
-def mock_transformer_user_classifier():
+def mock_transformer_user_classifier(mock_settings):
     with patch.object(UserClassifier, "_load_model_and_metadata", lambda self: None):
-        classifier = UserClassifier(user_model_id="dummy", config={})
+        classifier = UserClassifier(user_model_id="dummy", config=mock_settings)
         classifier.model = Mock()
         classifier.class_map = {"Ia": 0, "II": 1}
         classifier.input_shape = [1, 1024]
@@ -55,9 +62,9 @@ async def test_user_classifier_transformer(mock_transformer_user_classifier):
     assert "probabilities" not in results
 
 @pytest.mark.asyncio
-async def test_user_classifier_error():
+async def test_user_classifier_error(mock_settings):
     with patch.object(UserClassifier, "_load_model_and_metadata", lambda self: None):
-        classifier = UserClassifier(user_model_id="dummy", config={})
+        classifier = UserClassifier(user_model_id="dummy", config=mock_settings)
         classifier.model = None
         classifier.class_map = None
         classifier.input_shape = None

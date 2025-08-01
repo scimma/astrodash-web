@@ -15,11 +15,11 @@ cleanup() {
 # Set up trap for cleanup
 trap cleanup EXIT INT TERM
 
-# Kill any processes using ports 5000, 3000, and 4000
+# Kill any processes using ports 8000, 3000, and 4000
 echo "Checking for existing processes..."
-if lsof -ti:5000 > /dev/null; then
-    echo "Killing process on port 5000..."
-    kill $(lsof -ti:5000) 2>/dev/null
+if lsof -ti:8000 > /dev/null; then
+    echo "Killing process on port 8000..."
+    kill $(lsof -ti:8000) 2>/dev/null
 fi
 
 if lsof -ti:3000 > /dev/null; then
@@ -37,14 +37,14 @@ echo "Current directory at script start: $(pwd)"
 
 # Start backend server
 echo "[DEBUG] Before starting backend, current directory: $(pwd)"
-echo "[DEBUG] Target backend directory: $PROJECT_ROOT/backend"
-cd "$PROJECT_ROOT/backend" && uvicorn app.main:app --reload --host 0.0.0.0 --port 5000 &
+echo "[DEBUG] Target backend directory: $PROJECT_ROOT/prod_backend"
+cd "$PROJECT_ROOT/prod_backend" && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 &
 BACKEND_PID=$!
 cd "$PROJECT_ROOT"  # Return to project root
 
 # Wait for backend to be ready
 echo "Waiting for backend to be ready..."
-until curl -s http://localhost:5000/health > /dev/null; do
+until curl -s http://localhost:8000/health > /dev/null; do
     sleep 1
 done
 echo "Backend is ready!"
@@ -80,8 +80,8 @@ echo "Documentation is ready!"
 echo ""
 echo " All development servers are running!"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " Backend API:     http://localhost:5000"
-echo " Interactive API: http://localhost:5000/docs"
+echo " Backend API:     http://localhost:8000"
+echo " Interactive API: http://localhost:8000/docs"
 echo " Frontend App:    http://localhost:3000"
 echo " Documentation:   http://localhost:4000"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

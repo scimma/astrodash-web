@@ -53,16 +53,29 @@ class MLClassifier:
                 max_wave=max(processed_data['x'])
             )
 
+            # Debug training parameters
+            logger.info(f"Training parameters keys: {list(self.pars.keys())}")
+            if 'typeList' in self.pars:
+                logger.info(f"Type list from training params: {self.pars['typeList']}")
+            else:
+                logger.warning("typeList not found in training parameters")
+
             input_images, _, type_names_list, nw, n_bins, minmax_indexes = load_spectra.input_spectra()
+
+            logger.info(f"Type names list: {type_names_list}")
+            logger.info(f"Number of bins: {n_bins}")
 
             best_types_list = BestTypesListSingleRedshift(model_path, input_images, type_names_list, nw, n_bins)
 
             matches = []
             if best_types_list.best_types:
+                logger.info(f"Found {len(best_types_list.best_types[0])} classifications")
                 for i in range(len(best_types_list.best_types[0])):
                     classification = best_types_list.best_types[0][i]
                     probability = best_types_list.softmax_ordered[0][i]
+                    logger.info(f"Processing classification {i}: raw='{classification}' with probability {probability}")
                     _, sn_name, sn_age = classification_split(classification)
+                    logger.info(f"Split result: sn_name='{sn_name}', sn_age='{sn_age}'")
 
                     matches.append({
                         'type': sn_name, 'age': sn_age,
@@ -71,10 +84,22 @@ class MLClassifier:
                         'rlap': None,  # Will be filled below
                         'reliable': False
                     })
+            else:
+                logger.warning("best_types_list.best_types is empty or None")
 
             if not matches:
                 logger.warning("No matches found. Returning mock classification.")
-                return {}
+                return {
+                    'best_matches': [],
+                    'best_match': {
+                        'type': 'Unknown',
+                        'age': 'Unknown',
+                        'probability': 0.0,
+                        'redshift': processed_data['redshift'],
+                        'rlap': None
+                    },
+                    'reliable_matches': False
+                }
 
                         # Check if user wants RLAP calculation
             calculate_rlap = processed_data.get('calculate_rlap', False)

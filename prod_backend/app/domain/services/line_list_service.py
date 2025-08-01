@@ -1,6 +1,7 @@
 import os
 import logging
 from typing import Dict, List, Optional
+from app.config.settings import get_settings
 
 logger = logging.getLogger("line_list_service")
 
@@ -10,13 +11,9 @@ class LineListService:
     Reads and parses the sneLineList.txt file.
     """
     def __init__(self, line_list_path: Optional[str] = None):
-        # TODO: Move sneLineList.txt to a prod location and update this path
         if line_list_path is None:
-            # Reference the file from the old backend for now
-            backend_root = os.path.dirname(os.path.abspath(__file__))
-            # Go up to project root, then to backend/astrodash_models
-            project_root = os.path.abspath(os.path.join(backend_root, '../../../..'))
-            line_list_path = os.path.join(project_root, 'backend', 'astrodash_models', 'sneLineList.txt')
+            settings = get_settings()
+            line_list_path = settings.line_list_path
         self.line_list_path = line_list_path
         self._cache: Optional[Dict[str, List[float]]] = None
         logger.info(f"LineListService initialized with file: {self.line_list_path}")

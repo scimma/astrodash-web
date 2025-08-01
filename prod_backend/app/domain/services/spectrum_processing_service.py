@@ -1,7 +1,7 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 from app.domain.models.spectrum import Spectrum
 from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor, TransformerSpectrumProcessor
-from app.shared.utils.helpers import interpolate_to_1024
+from app.shared.utils.helpers import interpolate_to_1024, normalise_spectrum
 import numpy as np
 import logging
 
@@ -57,13 +57,17 @@ class SpectrumProcessingService:
 
             # Apply wavelength filtering
             if min_wave is not None or max_wave is not None:
-                y = self._apply_wavelength_filter(x, y, min_wave, max_wave)
+                x, y = self._apply_wavelength_filter(x, y, min_wave, max_wave)
                 logger.info(f"Applied wavelength filter: {len(y)} points remaining")
 
             # Apply smoothing
             if smoothing > 0:
                 y = self._apply_smoothing(x, y, smoothing)
                 logger.info(f"Applied smoothing with factor {smoothing}")
+
+            # Normalize spectrum (matching old backend behavior)
+            y = normalise_spectrum(y)
+            logger.info("Applied spectrum normalization")
 
             # Apply redshift if provided
             if z_value is not None:
@@ -101,7 +105,7 @@ class SpectrumProcessingService:
         y: np.ndarray,
         min_wave: Optional[float],
         max_wave: Optional[float]
-    ) -> np.ndarray:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Apply wavelength filtering to spectrum data.
 
@@ -112,8 +116,11 @@ class SpectrumProcessingService:
             max_wave: Maximum wavelength (None = no upper limit)
 
         Returns:
-            Filtered flux array
+            Tuple of (filtered_wavelength, filtered_flux)
         """
+        if min_wave is None and max_wave is None:
+            return x, y
+
         mask = np.ones(len(x), dtype=bool)
 
         if min_wave is not None:
@@ -122,11 +129,15 @@ class SpectrumProcessingService:
         if max_wave is not None:
             mask &= (x <= max_wave)
 
-        # Apply mask to flux
-        y_filtered = y.copy()
-        y_filtered[~mask] = 0
+        # Filter both wavelength and flux arrays
+        x_filtered = x[mask]
+        y_filtered = y[mask]
 
-        return y_filtered
+        logger.info(f"Wavelength filtering: {len(x)} -> {len(x_filtered)} points")
+        if len(x_filtered) > 0:
+            logger.info(f"Filtered wavelength range: {x_filtered.min():.2f} - {x_filtered.max():.2f}")
+
+        return x_filtered, y_filtered
 
     def _apply_smoothing(
         self,

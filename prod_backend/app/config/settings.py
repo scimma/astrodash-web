@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     dash_model_path: str = Field("app/astrodash_models/zeroZ/pytorch_model.pth", env="DASH_MODEL_PATH")
     transformer_model_path: str = Field("app/astrodash_models/yuqing_models/TF_wiserep_v6.pt", env="TRANSFORMER_MODEL_PATH")
 
+    # Template and Line List Paths
+    template_path: str = Field("app/astrodash_models/sn_and_host_templates.npz", env="TEMPLATE_PATH")
+    line_list_path: str = Field("app/astrodash_models/sneLineList.txt", env="LINE_LIST_PATH")
+
     # Logging
     log_dir: str = Field("logs", env="LOG_DIR")
     log_level: str = Field("INFO", env="LOG_LEVEL")
@@ -35,7 +39,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(60 * 24, env="ACCESS_TOKEN_EXPIRE_MINUTES")
 
     # Other
-    osc_api_url: str = Field("https://api.sne.space", env="OSC_API_URL")
+    osc_api_url: str = Field("https://api.astrocats.space", env="OSC_API_URL")
 
     class Config:
         env_file = ".env"

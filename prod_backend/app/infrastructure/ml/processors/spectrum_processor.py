@@ -6,8 +6,8 @@ import os
 import sys
 import json
 from collections import OrderedDict
-from app.urllib.request import urlopen
-from app.urllib.error import URLError
+from urllib.request import urlopen
+from urllib.error import URLError
 # NOTE: You will need to adapt the following import to your new architecture
 # from .astrodash_backend import (
 #     get_training_parameters, AgeBinning, BestTypesListSingleRedshift, LoadInputSpectra,
@@ -22,6 +22,66 @@ class SpectrumProcessor:
         self.pars = None
         # TODO: Adapt or implement get_training_parameters and normalise_spectrum in new codebase
         self.pars = None
+
+    def process(self, x, y, smoothing=0, known_z=False, z_value=None, min_wave=None, max_wave=None, calculate_rlap=False):
+        """
+        Process spectrum data with various parameters.
+
+        Args:
+            x: Wavelength array
+            y: Flux array
+            smoothing: Smoothing parameter
+            known_z: Whether redshift is known
+            z_value: Known redshift value
+            min_wave: Minimum wavelength
+            max_wave: Maximum wavelength
+            calculate_rlap: Whether to calculate RLAP
+
+        Returns:
+            Processed spectrum data
+        """
+        try:
+            x = np.array(x)
+            y = np.array(y)
+
+            # Apply wavelength filtering if specified
+            if min_wave is not None or max_wave is not None:
+                if min_wave is not None:
+                    mask = x >= min_wave
+                    x = x[mask]
+                    y = y[mask]
+                if max_wave is not None:
+                    mask = x <= max_wave
+                    x = x[mask]
+                    y = y[mask]
+
+            # Apply smoothing if specified
+            if smoothing > 0:
+                y = signal.medfilt(y, kernel_size=smoothing)
+
+            # Apply redshift if known
+            if known_z and z_value is not None:
+                x = x / (1 + z_value)
+
+            # Normalize spectrum
+            y = self.normalise_spectrum(y)
+
+            return {
+                'x': x.tolist(),
+                'y': y.tolist(),
+                'redshift': z_value if known_z else None
+            }
+
+        except Exception as e:
+            logger.error(f"Error processing spectrum: {e}")
+            raise ValueError(f"Spectrum processing error: {e}")
+
+    def normalise_spectrum(self, flux: np.ndarray) -> np.ndarray:
+        """Normalize spectrum flux values."""
+        if len(flux) == 0 or np.min(flux) == np.max(flux):
+            logger.warning("Normalising spectrum: zero or constant flux array.")
+            return np.zeros(len(flux))
+        return (flux - np.min(flux)) / (np.max(flux) - np.min(flux))
 
     def read_file(self, file_or_ref):
         """Read spectrum data from various sources"""
@@ -148,7 +208,7 @@ class SpectrumProcessor:
         try:
             import ssl
             context = ssl._create_unverified_context()
-            from app.urllib.request import urlopen
+            from urllib.request import urlopen
             response = urlopen(f"{osc_base_url}{obj_name}/spectra/time+data", context=context)
             data = json.loads(response.read(), object_pairs_hook=OrderedDict)
             spectrum_data = data[next(iter(data))]['spectra'][0][1]

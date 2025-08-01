@@ -11,6 +11,7 @@ if APP_PATH not in sys.path:
 
 from domain.models.spectrum import Spectrum
 from infrastructure.ml.classifiers.dash_classifier import DashClassifier
+from config.settings import Settings
 
 @pytest.fixture
 def mock_processor():
@@ -30,10 +31,18 @@ def mock_model():
     model.side_effect = call
     return model
 
+@pytest.fixture
+def mock_settings():
+    settings = Mock(spec=Settings)
+    settings.dash_model_path = "/fake/path/model.pth"
+    settings.nw = 1024
+    settings.w0 = 3500.0
+    settings.w1 = 10000.0
+    return settings
+
 @pytest.mark.asyncio
-async def test_dash_classifier_success(mock_processor, mock_model):
-    config = {"nw": 1024, "w0": 3500.0, "w1": 10000.0}
-    classifier = DashClassifier(config=config, processor=mock_processor)
+async def test_dash_classifier_success(mock_processor, mock_model, mock_settings):
+    classifier = DashClassifier(config=mock_settings, processor=mock_processor)
     classifier.model = mock_model
     spectrum = Spectrum(x=[1.0]*1024, y=[2.0]*1024, redshift=0.0)
     results = await classifier.classify(spectrum)
@@ -41,9 +50,8 @@ async def test_dash_classifier_success(mock_processor, mock_model):
     assert "probabilities" in results
 
 @pytest.mark.asyncio
-async def test_dash_classifier_model_not_loaded(mock_processor):
-    config = {"nw": 1024, "w0": 3500.0, "w1": 10000.0}
-    classifier = DashClassifier(config=config, processor=mock_processor)
+async def test_dash_classifier_model_not_loaded(mock_processor, mock_settings):
+    classifier = DashClassifier(config=mock_settings, processor=mock_processor)
     classifier.model = None
     spectrum = Spectrum(x=[1.0]*1024, y=[2.0]*1024, redshift=0.0)
     results = await classifier.classify(spectrum)

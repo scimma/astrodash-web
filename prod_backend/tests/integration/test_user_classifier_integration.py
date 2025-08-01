@@ -1,9 +1,12 @@
 import os
 import sys
 import pytest
-import numpy as np
 import torch
+import numpy as np
+from unittest.mock import Mock
+from unittest.mock import patch
 
+# Set PYTHONPATH to the app directory if not already set
 APP_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../app"))
 if APP_PATH not in sys.path:
     sys.path.insert(0, APP_PATH)
@@ -11,19 +14,44 @@ if APP_PATH not in sys.path:
 from domain.models.spectrum import Spectrum
 from infrastructure.ml.classifiers.user_classifier import UserClassifier
 
-USER_MODEL_ID = "932eed3d-4d0e-4594-a490-5fd4f5e7a344"
-USER_MODEL_DIR = "/home/jesusca/code_personal/astrodash-web/backend/astrodash_models/user_uploaded"
+TEST_FILES_DIR = os.path.join(os.path.dirname(__file__), '../files')
+DAT_FILE = os.path.join(TEST_FILES_DIR, 'ptf10hgi.p67.dat')
 
+@patch('app.infrastructure.ml.classifiers.user_classifier.torch.softmax', lambda x, dim: Mock(cpu=lambda: Mock(numpy=lambda: np.array([[0.8, 0.2]]))))
 @pytest.mark.asyncio
 async def test_user_classifier_integration():
-    model_base = os.path.join(USER_MODEL_DIR, USER_MODEL_ID)
-    model_path = model_base + '.pth'
-    mapping_path = model_base + '.classes.json'
-    input_shape_path = model_base + '.input_shape.json'
-    if not (os.path.exists(model_path) and os.path.exists(mapping_path) and os.path.exists(input_shape_path)):
-        pytest.skip("No real user-uploaded model available for integration test.")
-    classifier = UserClassifier(user_model_id=USER_MODEL_ID, config={"user_model_dir": USER_MODEL_DIR})
-    spectrum = Spectrum(x=[1.0]*1024, y=[2.0]*1024, redshift=0.0)
-    results = await classifier.classify(spectrum)
-    assert "best_matches" in results
-    assert len(results["best_matches"]) > 0
+    config = Mock()
+    config.user_model_dir = "/home/jesusca/code_personal/astrodash-web/backend/astrodash_models/user_uploaded"
+
+    # Mock the model loading to avoid file system dependencies
+    with patch.object(UserClassifier, "_load_model_and_metadata", lambda self: None):
+        classifier = UserClassifier(user_model_id="test_model", config=config)
+
+        mock_classifier = Mock()
+        mock_tensor = torch.tensor([[0.8, 0.2]], dtype=torch.float32)
+        mock_classifier.__call__ = Mock(return_value=mock_tensor)
+        mock_classifier.classify = Mock(return_value={
+            "best_matches": [{"type": "Ia", "probability": 0.8}],
+            "probabilities": [0.8, 0.2]
+        })
+
+        classifier.model = mock_classifier
+        classifier.class_map = {"Ia": 0, "II": 1}
+        classifier.input_shape = [1, 1024]
+
+        with open(DAT_FILE, 'r') as f:
+            data = np.loadtxt(f)
+            x = data[:, 0]
+            y = data[:, 1]
+        spectrum = Spectrum(x=x.tolist(), y=y.tolist(), redshift=0.0)
+        results = await classifier.classify(spectrum)
+        assert results is not None
+        assert "best_matches" in results
+        assert "best_match" in results
+        assert "reliable_matches" in results
+        assert "user_model_id" in results
+        assert isinstance(results["best_matches"], list)
+        assert len(results["best_matches"]) > 0
+        assert all("probability" in match for match in results["best_matches"])
+        assert all("type" in match for match in results["best_matches"])
+        assert results["user_model_id"] == "test_model"

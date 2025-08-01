@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = 'http://localhost:8000';
 
 export interface SpectrumData {
   x: number[];
@@ -53,10 +53,8 @@ export interface AnalysisOptionsResponse {
 }
 
 export interface TemplateSpectrumResponse {
-  wave: number[];
-  flux: number[];
-  sn_type: string;
-  age_bin: string;
+  x: number[];
+  y: number[];
 }
 
 export interface LineListResponse {
@@ -65,7 +63,7 @@ export interface LineListResponse {
 
 class Api {
   async processSpectrum(params: ProcessParams): Promise<ProcessResponse> {
-    console.log('API: Making request to /process with params:', params);
+    console.log('API: Making request to /api/v1/process with params:', params);
     const formData = new FormData();
 
     // Add file if provided
@@ -99,7 +97,7 @@ class Api {
     }
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/process`, formData, {
+      const response = await axios.post(`${API_BASE_URL}/api/v1/process`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -113,7 +111,7 @@ class Api {
   }
 
   async getOSCReferences(): Promise<string[]> {
-    const response = await axios.get(`${API_BASE_URL}/api/osc-references`);
+    const response = await axios.get(`${API_BASE_URL}/api/v1/osc-references`);
     if (response.data.status === 'success') {
       return response.data.references;
     }
@@ -121,22 +119,34 @@ class Api {
   }
 
   async getAnalysisOptions(): Promise<AnalysisOptionsResponse> {
-    const response = await axios.get(`${API_BASE_URL}/api/analysis-options`);
+    const response = await axios.get(`${API_BASE_URL}/api/v1/analysis-options`);
     return response.data;
   }
 
   async getTemplateSpectrum(snType: string, age: string): Promise<TemplateSpectrumResponse> {
-    const response = await axios.get(`${API_BASE_URL}/api/template-spectrum`, {
-      params: {
-        sn_type: snType,
-        age_bin: age
-      }
-    });
-    return response.data;
+    console.log(`API: Fetching template for ${snType} ${age}`);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/v1/template-spectrum`, {
+        params: {
+          sn_type: snType,
+          age_bin: age
+        }
+      });
+      console.log(`API: Template response received:`, response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error(`API: Template fetch failed for ${snType} ${age}:`, {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message
+      });
+      throw error;
+    }
   }
 
   async getLineList(): Promise<LineListResponse> {
-    const response = await axios.get(`${API_BASE_URL}/api/line-list`);
+    const response = await axios.get(`${API_BASE_URL}/api/v1/line-list`);
     return response.data;
   }
 
@@ -157,7 +167,7 @@ class Api {
       formData.append('model_id', params.model_id);
     }
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/batch-process`, formData, {
+      const response = await axios.post(`${API_BASE_URL}/api/v1/batch-process`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -190,7 +200,7 @@ class Api {
       formData.append('model_id', params.model_id);
     }
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/batch-process-multiple`, formData, {
+      const response = await axios.post(`${API_BASE_URL}/api/v1/batch-process-multiple`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
@@ -207,7 +217,7 @@ class Api {
     formData.append('file', file);
     formData.append('class_mapping', JSON.stringify(classMapping));
     formData.append('input_shape', JSON.stringify(inputShape));
-    const response = await axios.post(`${API_BASE_URL}/api/upload-model`, formData, {
+    const response = await axios.post(`${API_BASE_URL}/api/v1/upload-model`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
@@ -215,8 +225,14 @@ class Api {
 
   async getUserModels(): Promise<any[]> {
     // Fetch user-uploaded models from the backend
-    const response = await axios.get(`${API_BASE_URL}/api/list-models`);
-    return response.data.models || [];
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/v1/models`);
+      return response.data.models || response.data || [];
+    } catch (error) {
+      console.warn('Failed to fetch user models:', error);
+      // Return empty array if models endpoint fails
+      return [];
+    }
   }
 }
 

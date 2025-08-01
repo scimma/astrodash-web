@@ -1,6 +1,7 @@
 import os
 import sys
 import pytest
+from unittest.mock import Mock, AsyncMock
 # Set PYTHONPATH to the app directory if not already set
 APP_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../app"))
 if APP_PATH not in sys.path:
@@ -8,6 +9,7 @@ if APP_PATH not in sys.path:
 
 from domain.services.spectrum_service import SpectrumService
 from infrastructure.storage.file_spectrum_repository import FileSpectrumRepository, OSCSpectrumRepository
+from domain.models.spectrum import Spectrum
 
 TEST_FILES_DIR = os.path.join(os.path.dirname(__file__), '../files')
 DAT_FILE = os.path.join(TEST_FILES_DIR, 'ptf10hgi.p67.dat')
@@ -40,9 +42,17 @@ async def test_get_spectrum_from_file_lnw():
 
 @pytest.mark.asyncio
 async def test_get_spectrum_from_osc():
+    # Mock the OSC repository to avoid network dependencies
+    mock_osc_repo = Mock(spec=OSCSpectrumRepository)
+    mock_osc_repo.get_by_osc_ref = AsyncMock(return_value=Spectrum(
+        x=[4000.0, 5000.0, 6000.0],
+        y=[1.0, 2.0, 3.0],
+        redshift=0.1,
+        osc_ref=OSC_REF
+    ))
+
     file_repo = FileSpectrumRepository()
-    osc_repo = OSCSpectrumRepository()
-    service = SpectrumService(file_repo, osc_repo)
+    service = SpectrumService(file_repo, mock_osc_repo)
     spectrum = await service.get_spectrum_from_osc(OSC_REF)
     assert spectrum is not None
     assert spectrum.is_valid()

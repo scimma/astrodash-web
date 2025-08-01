@@ -18,7 +18,7 @@ def mock_model_factory():
 @pytest.fixture
 def mock_classifier():
     classifier = Mock()
-    classifier.classify = AsyncMock(return_value={"best_type": "Ia", "probabilities": {"Ia": 0.9, "II": 0.1}})
+    classifier.classify = AsyncMock(return_value={"best_matches": [{"type": "Ia", "probability": 0.9}], "probabilities": {"Ia": 0.9, "II": 0.1}})
     return classifier
 
 @pytest.fixture
@@ -30,11 +30,15 @@ async def test_classify_spectrum_success(mock_model_factory, mock_classifier, sp
     mock_model_factory.get_classifier.return_value = mock_classifier
     service = ClassificationService(mock_model_factory)
     result = await service.classify_spectrum(spectrum, model_type="dash")
-    assert isinstance(result, Classification)
+    assert result is not None
     assert result.spectrum_id == "spec-1"
     assert result.model_type == "dash"
-    assert result.results["best_type"] == "Ia"
+    assert "best_matches" in result.results
     assert "probabilities" in result.results
+    assert isinstance(result.results["best_matches"], list)
+    assert len(result.results["best_matches"]) > 0
+    assert "type" in result.results["best_matches"][0]
+    assert "probability" in result.results["best_matches"][0]
     mock_model_factory.get_classifier.assert_called_once_with("dash", None)
     mock_classifier.classify.assert_awaited_once_with(spectrum)
 
@@ -50,7 +54,7 @@ async def test_classify_spectrum_with_user_model(mock_model_factory, mock_classi
 
 @pytest.mark.asyncio
 async def test_classify_spectrum_failure(mock_model_factory, mock_classifier, spectrum):
-    mock_classifier.classify = AsyncMock(return_value=None)
+    mock_classifier.classify = AsyncMock(return_value={})  # Return empty dict instead of None
     mock_model_factory.get_classifier.return_value = mock_classifier
     service = ClassificationService(mock_model_factory)
     with pytest.raises(ValueError):

@@ -11,7 +11,6 @@ import {
   TextField,
   List,
   ListItem,
-  ListItemText,
   IconButton,
   Select,
   MenuItem,
@@ -32,14 +31,11 @@ import {
   Fade
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
-import HelpOutlineIcon from '@mui/icons-material/HelpOutline';
-import Brightness4Icon from '@mui/icons-material/Brightness4';
-import Brightness7Icon from '@mui/icons-material/Brightness7';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ReferenceLine, Customized } from 'recharts';
-import { api, ProcessParams, ProcessResponse, LineListResponse } from '../services/api';
-import { ResponsiveContainer, Customized as RechartsCustomized } from 'recharts';
+import { api, ProcessResponse, LineListResponse } from '../services/api';
+import { ResponsiveContainer } from 'recharts';
 import AnalysisOptionPanel from './AnalysisOptionPanel';
 import CloseIcon from '@mui/icons-material/Close';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -78,14 +74,6 @@ const SpaceSectionHeader = styled(Typography)(({ theme }) => ({
   paddingLeft: theme.spacing(0.5),
 }));
 
-const SpaceyLabel = styled(Typography)(({ theme }) => ({
-  fontWeight: 500,
-  fontSize: '1rem',
-  color: '#b0b8c9',
-  marginBottom: theme.spacing(1.2),
-  marginTop: theme.spacing(0.5),
-}));
-
 interface SupernovaClassifierProps {
   toggleColorMode: () => void;
   currentMode: 'light' | 'dark';
@@ -93,10 +81,10 @@ interface SupernovaClassifierProps {
 
 // Template spectrum type with additional metadata
 type TemplateSpectrum = {
-  wave: number[];
-  flux: number[];
-  sn_type: string;
-  age_bin: string;
+  x: number[];
+  y: number[];
+  sn_type?: string;
+  age_bin?: string;
   color?: string;
   visible?: boolean;
 };
@@ -122,14 +110,6 @@ const elementOrder = [
   'OI', '[OI]', 'OII', '[OII]', '[OIII]', 'OV', 'OVI', 'NaI', 'MgI', 'MgII',
   'SiII', 'SII', 'CaII', 'CaII [H&K]', 'CaII [IR-trip]', '[CaII]', 'FeII', 'FeIII', 'T1', 'T2'
 ];
-
-// Add this type above the component definition (or near imports):
-type ChartContextProps = {
-  xAxisMap: any;
-  yAxisMap: any;
-  width: number;
-  height: number;
-};
 
 const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMode, currentMode }) => {
   const navigate = useNavigate();
@@ -211,49 +191,10 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
 
   // Add pulse animation for the top Chip
   const pulse = keyframes`
-  0% { box-shadow: 0 0 0 0 #ffe066cc; }
-  40% { box-shadow: 0 0 24px 12px #ffe066cc; }
-  80% { box-shadow: 0 0 12px 6px #ffe06688; }
-  100% { box-shadow: 0 0 0 0 #ffe06600; }
-`;
-
-  // Helper function to interpolate template data to match spectrum wavelengths
-  const interpolateTemplate = (template: TemplateSpectrum, spectrumWavelengths: number[]): (number | undefined)[] => {
-    if (!template || !template.wave || !template.flux || template.wave.length === 0) {
-      return new Array(spectrumWavelengths.length).fill(undefined);
-    }
-
-    const interpolated = spectrumWavelengths.map(wave => {
-      // Find the two closest template wavelengths
-      let lowerIdx = -1;
-      let upperIdx = -1;
-
-      for (let i = 0; i < template.wave.length; i++) {
-        if (template.wave[i] <= wave) {
-          lowerIdx = i;
-        } else {
-          upperIdx = i;
-          break;
-        }
-      }
-
-      // If wave is outside template range, return undefined
-      if (lowerIdx === -1 || upperIdx === -1) {
-        return undefined;
-      }
-
-      // Linear interpolation
-      const lowerWave = template.wave[lowerIdx];
-      const upperWave = template.wave[upperIdx];
-      const lowerFlux = template.flux[lowerIdx];
-      const upperFlux = template.flux[upperIdx];
-
-      const ratio = (wave - lowerWave) / (upperWave - lowerWave);
-      return lowerFlux + ratio * (upperFlux - lowerFlux);
-    });
-
-    return interpolated;
-  };
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  `;
 
   // Add useEffect to log spectrumData changes
   useEffect(() => {
@@ -311,10 +252,10 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   // Initialize template overlays from best matches
   useEffect(() => {
     if (bestMatches.length > 0 && showTemplates) {
-      const newOverlays: TemplateOverlay[] = bestMatches.slice(0, 5).map((match, index) => ({
+      const newOverlays: TemplateOverlay[] = bestMatches.slice(0, 3).map((match, index) => ({
         sn_type: match.type,
         age_bin: match.age,
-        visible: index < 3, // Show first 3 by default
+        visible: index < 1, // Show only first 1 by default for testing
         color: templateColors[index % templateColors.length],
         spectrum: null
       }));
@@ -327,8 +268,18 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     if (showTemplates && templateOverlays.length > 0 && spectrumData) {
       templateOverlays.forEach(async (overlay, index) => {
         if (overlay.visible && !overlay.spectrum) {
+          console.log(`Fetching template for ${overlay.sn_type} ${overlay.age_bin}`);
           try {
             const templateData = await api.getTemplateSpectrum(overlay.sn_type, overlay.age_bin);
+            console.log(`Template data received for ${overlay.sn_type} ${overlay.age_bin}:`, {
+              waveLength: templateData.x?.length,
+              fluxLength: templateData.y?.length,
+              sampleWave: templateData.x?.slice(0, 3),
+              sampleFlux: templateData.y?.slice(0, 3),
+              waveRange: templateData.x ? [Math.min(...templateData.x), Math.max(...templateData.x)] : null,
+              fluxRange: templateData.y ? [Math.min(...templateData.y), Math.max(...templateData.y)] : null,
+              fullTemplateData: templateData // Log the full structure to see what we're getting
+            });
             setTemplateOverlays(prev => prev.map((o, i) =>
               i === index ? { ...o, spectrum: templateData } : o
             ));
@@ -377,20 +328,51 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     }
 
     // Add template data to each point
-    return baseData.map(point => {
+    const result = baseData.map(point => {
       const templateData: any = { x: point.x, y: point.y };
 
       templateOverlays.forEach((overlay, index) => {
         if (overlay.visible && overlay.spectrum) {
-          const interpolatedFlux = interpolateTemplate(overlay.spectrum, [point.x])[0];
-          if (interpolatedFlux !== undefined) {
-            templateData[`template_${index}`] = interpolatedFlux;
+          // Find the closest template wavelength to the current spectrum wavelength
+          const templateWavelengths = overlay.spectrum.x;
+          const templateFluxes = overlay.spectrum.y;
+
+          // Add null checks to prevent crashes
+          if (!templateWavelengths || !templateFluxes ||
+              !Array.isArray(templateWavelengths) || !Array.isArray(templateFluxes) ||
+              templateWavelengths.length === 0 || templateFluxes.length === 0) {
+            console.warn(`Template data invalid for ${overlay.sn_type} ${overlay.age_bin}:`, {
+              hasWave: !!templateWavelengths,
+              hasFlux: !!templateFluxes,
+              waveIsArray: Array.isArray(templateWavelengths),
+              fluxIsArray: Array.isArray(templateFluxes),
+              waveLength: templateWavelengths?.length,
+              fluxLength: templateFluxes?.length
+            });
+            return; // Skip this template
           }
+
+          // Find the index of the closest wavelength
+          let closestIndex = 0;
+          let minDistance = Math.abs(templateWavelengths[0] - point.x);
+
+          for (let i = 1; i < templateWavelengths.length; i++) {
+            const distance = Math.abs(templateWavelengths[i] - point.x);
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestIndex = i;
+            }
+          }
+
+          // Use the flux value at the closest wavelength
+          templateData[`template_${index}`] = templateFluxes[closestIndex];
         }
       });
 
       return templateData;
     });
+
+    return result;
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -476,7 +458,10 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       }
 
       setSpectrumData(response);
-      setBestMatches(response.classification.best_matches || []);
+      console.log('Setting bestMatches:', response.classification?.best_matches);
+      console.log('Full response:', response);
+      console.log('Classification object:', response.classification);
+      setBestMatches(response.classification?.best_matches || []);
 
       // Clear template overlays when new spectrum is processed
       setTemplateOverlays([]);
@@ -513,11 +498,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     link.download = 'spectrum_analysis.json';
     link.click();
     URL.revokeObjectURL(url);
-  };
-
-  const handleHelp = () => {
-    // Implement help functionality
-    console.log('Help clicked');
   };
 
   const toggleTemplateVisibility = (index: number) => {
@@ -608,18 +588,6 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     return element.replace(/[^A-Z]/g, '').slice(0, 3);
   };
 
-  // Custom legend for element/ion lines
-  const ElementLineLegend = ({ visibleLines, lineList }: { visibleLines: string[], lineList: LineListResponse }) => (
-    <div style={{ position: 'absolute', top: 10, left: 40, display: 'flex', flexDirection: 'row', gap: 16, pointerEvents: 'none', zIndex: 2 }}>
-      {visibleLines.map((element) => (
-        <span key={element} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ width: 18, height: 6, background: getElementColor(element), display: 'inline-block', borderRadius: 2 }} />
-          <span style={{ fontSize: 12, color: '#333', background: 'rgba(255,255,255,0.8)', padding: '0 4px', borderRadius: 2 }}>{element}</span>
-        </span>
-      ))}
-    </div>
-  );
-
   // Legend for visible element/ion lines and template overlays
   const GraphLegend = () => {
     let items: { label: string; color: string; type: 'element' | 'template' }[] = [];
@@ -663,14 +631,22 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   };
 
   // Add a helper for SN type chip color and icon
-  const snTypeChipProps = (type: string, isTop: boolean) => {
-    switch (type.toLowerCase()) {
+  const snTypeChipProps = (type: string | undefined, isTop: boolean) => {
+    // Handle undefined or null type values
+    if (!type) {
+      return { color: '#b3baff', icon: <StarIcon sx={{ fontSize: 20 }} />, label: 'Unknown' };
+    }
+
+    // Extract base type from combined format (e.g., "Ia (2 to 6)" -> "Ia")
+    const baseType = type.split(' ')[0].toLowerCase();
+
+    switch (baseType) {
       case 'ia':
-        return { color: '#ffd700', icon: <StarIcon sx={{ fontSize: 20 }} />, label: 'Ia' };
+        return { color: '#ffd700', icon: <StarIcon sx={{ fontSize: 20 }} />, label: type };
       case 'ib/c':
-        return { color: '#ff7043', icon: <WhatshotIcon sx={{ fontSize: 20 }} />, label: 'Ib/c' };
+        return { color: '#ff7043', icon: <WhatshotIcon sx={{ fontSize: 20 }} />, label: type };
       case 'ii':
-        return { color: '#64b5f6', icon: <LensBlurIcon sx={{ fontSize: 20 }} />, label: 'II' };
+        return { color: '#64b5f6', icon: <LensBlurIcon sx={{ fontSize: 20 }} />, label: type };
       default:
         return { color: '#b3baff', icon: <StarIcon sx={{ fontSize: 20 }} />, label: type };
     }
@@ -944,14 +920,23 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                   <Box sx={{ width: '100%' }}>
                     <Fade in={bestMatches.length > 0} timeout={600}>
                       <List>
-                        {bestMatches.map((match, index) => {
+                        {bestMatches
+                          .filter(match => match && typeof match === 'object') // Filter out invalid matches
+                          .map((match, index) => {
                           const isTop = index === 0;
-                          const { color: chipColor, label: chipLabel } = snTypeChipProps(match.type, isTop);
+                          console.log('Processing match:', match); // Debug log
+                          console.log('Match type:', match.type, 'Match age:', match.age); // Debug individual fields
+
+                          // Combine type and age for display
+                          const combinedType = match.type && match.age ? `${match.type} (${match.age})` : match.type || 'Unknown';
+                          console.log('Combined type:', combinedType); // Debug combined type
+                          const { color: chipColor, label: chipLabel } = snTypeChipProps(combinedType, isTop);
+
                           return (
                             <ListItem key={index} sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                               <Chip
                                 key={`top-chip-${pulseKey}`}
-                                label={chipLabel + (match.age ? ` (${match.age})` : '')}
+                                label={chipLabel}
                                 sx={{
                                   background: isTop ? `linear-gradient(90deg, ${chipColor} 60%, #fffde4 100%)` : chipColor,
                                   color: isTop ? '#222' : '#fff',

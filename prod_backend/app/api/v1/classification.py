@@ -1,15 +1,11 @@
-from fastapi import APIRouter, Query, Depends
+from fastapi import APIRouter, Query, Depends, HTTPException
 from app.shared.schemas.spectrum import SpectrumSchema
 from app.core.dependencies import get_app_settings
+import numpy as np
+import os
+import logging
 
+logger = logging.getLogger("classification_api")
 router = APIRouter()
 
-@router.get("/template-spectrum", response_model=SpectrumSchema)
-async def get_template_spectrum(sn_type: str = Query('Ia'), age_bin: str = Query('2 to 6'), settings = Depends(get_app_settings)):
-    # TODO: Retrieve template spectrum from service/config using settings
-    return SpectrumSchema(x=[], y=[])
-
-@router.get("/analysis-options")
-async def get_analysis_options(settings = Depends(get_app_settings)):
-    # TODO: Return options from service/config using settings
-    return {"sn_types": [], "age_bins": []}
+# Template spectrum endpoint moved to spectrum.py where it belongs

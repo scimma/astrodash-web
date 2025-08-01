@@ -4,6 +4,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 from app.shared.utils.redshift import get_median_redshift
 from app.shared.utils.helpers import prepare_log_wavelength_and_templates, get_nonzero_minmax, normalize_age_bin
+from app.config.settings import get_settings
 
 logger = logging.getLogger("redshift_service")
 
@@ -14,11 +15,8 @@ class RedshiftService:
     models that have the required spectral templates.
     """
     def __init__(self, settings=None):
-        self.settings = settings
-        # TODO: Move template path to config/settings
-        backend_root = os.path.dirname(os.path.abspath(__file__))
-        project_root = os.path.abspath(os.path.join(backend_root, '../../../../'))
-        self.template_path = os.path.join(project_root, 'backend', 'astrodash_models', 'sn_and_host_templates.npz')
+        self.settings = settings or get_settings()
+        self.template_path = self.settings.template_path
 
     async def estimate_redshift_from_spectrum(
         self,
