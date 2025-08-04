@@ -1,5 +1,5 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from app.shared.schemas.spectrum import SpectrumSchema
 from app.shared.schemas.classification import ClassificationSchema
 from app.core.dependencies import get_sqlalchemy_spectrum_repository, get_osc_spectrum_repo, get_model_factory, get_app_settings, get_template_analysis_service, get_file_spectrum_repo
@@ -12,7 +12,7 @@ from app.domain.repositories.spectrum_repository import create_spectrum_template
 from app.domain.models.spectrum import Spectrum
 from app.shared.utils.validators import validate_file_extension, ValidationError
 from app.domain.services.redshift_service import RedshiftService
-from app.shared.utils.helpers import prepare_log_wavelength_and_templates, get_nonzero_minmax, sanitize_for_json
+from app.shared.utils.helpers import prepare_log_wavelength_and_templates, get_nonzero_minmax, sanitize_for_json, construct_osc_reference
 from app.infrastructure.storage.model_storage import ModelStorage
 import json
 import io
@@ -21,12 +21,10 @@ import numpy as np
 import os
 from app.domain.services.line_list_service import LineListService
 
+
+
 logger = logging.getLogger("spectrum_api")
 router = APIRouter()
-
-# Cache for template data to avoid reloading the .npz file
-_template_cache = None
-_template_cache_path = None
 
 @router.get("/analysis-options")
 async def get_analysis_options(
@@ -147,36 +145,7 @@ async def get_template_statistics(
         logger.error(f"Error fetching template statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch template statistics: {str(e)}")
 
-@router.get("/osc-references")
-async def get_osc_references():
-    """
-    Get a list of available OSC references for testing.
 
-    TODO: Update this endpoint to fetch the actual list of OSC references
-    from the OSC API or database instead of returning hardcoded test data.
-    """
-    try:
-        logger.info("Requested OSC references")
-        # TODO: Replace with actual OSC API call or database query
-        # Current implementation returns test data - needs to be updated
-        references = [
-            "https://www.wiserep.org/spectrum/view/12345",
-            "https://www.wiserep.org/spectrum/view/67890",
-            "https://www.wiserep.org/spectrum/view/11111",
-            "https://www.wiserep.org/spectrum/view/22222",
-            "https://www.wiserep.org/spectrum/view/33333"
-        ]
-        return {
-            "status": "success",
-            "references": references,
-            "message": "OSC references retrieved successfully"
-        }
-    except Exception as e:
-        logger.error(f"Error fetching OSC references: {e}")
-        return {
-            "status": "error",
-            "message": f"Failed to fetch OSC references: {str(e)}"
-        }
 
 @router.post("/process")
 async def process_spectrum(
@@ -223,9 +192,15 @@ async def process_spectrum(
         processing_service = SpectrumProcessingService()
 
         # Get spectrum data
+        osc_ref = parsed_params.get('oscRef')
+        if osc_ref:
+            # Construct proper OSC reference from SN name
+            osc_ref = construct_osc_reference(osc_ref)
+            logger.info(f"Constructed OSC reference: {osc_ref}")
+
         spectrum = await _get_spectrum_data(
             file=file,
-            osc_ref=parsed_params.get('oscRef'),
+            osc_ref=osc_ref,
             spectrum_service=spectrum_service
         )
 

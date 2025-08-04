@@ -15,20 +15,20 @@ def prepare_log_wavelength_and_templates(
     """
     # Import here to avoid circular imports
     from app.infrastructure.ml.dash_utils import get_training_parameters
-    
+
     # Get training parameters (w0, w1, nw) from the DASH model
     pars = get_training_parameters()
     w0, w1, nw = pars['w0'], pars['w1'], pars['nw']
-    
+
     # Create log-wavelength grid using training parameters
     dwlog = np.log(w1 / w0) / nw
     log_wave = w0 * np.exp(np.arange(nw) * dwlog)
-    
+
     # Interpolate input spectrum to log-wavelength grid
     x = np.array(processed_data["x"])
     y = np.array(processed_data["y"])
     input_flux_log = np.interp(log_wave, x, y, left=0, right=0)
-    
+
     # Load templates
     if template_dir is None:
         # Use the same path resolution logic as get_training_parameters
@@ -38,16 +38,16 @@ def prepare_log_wavelength_and_templates(
         # Target path: backend/astrodash_models/
         backend_dir = os.path.join(current_dir, '..', '..', '..', '..', 'backend')
         template_dir = os.path.join(backend_dir, 'astrodash_models')
-        
+
         # Verify the directory exists
         if not os.path.exists(template_dir):
             raise FileNotFoundError(f"Could not find astrodash_models directory at {template_dir}")
-    
+
     template_path = os.path.join(template_dir, template_filename)
     data = np.load(template_path, allow_pickle=True)
     snTemplates_raw = data['snTemplates'].item()
     snTemplates = {str(k): v for k, v in snTemplates_raw.items()}
-    
+
     return log_wave, input_flux_log, snTemplates, dwlog, nw, w0, w1
 
 def get_templates_for_type_age(
@@ -63,7 +63,7 @@ def get_templates_for_type_age(
     template_fluxes = []
     template_names = []
     template_minmax_indexes = []
-    
+
     if sn_type in snTemplates:
         age_bin_keys = [str(k).strip() for k in snTemplates[sn_type].keys()]
         if age_norm.strip() in age_bin_keys:
@@ -82,7 +82,7 @@ def get_templates_for_type_age(
                     template_fluxes.append(interp_flux)
                     template_names.append(f"{sn_type}:{age_norm}")
                     template_minmax_indexes.append((tmin, tmax))
-    
+
     return template_fluxes, template_names, template_minmax_indexes
 
 def get_nonzero_minmax(arr: np.ndarray) -> Tuple[int, int]:
@@ -160,10 +160,10 @@ def zero_non_overlap_part(array: np.ndarray, min_index: int, max_index: int, out
 def interpolate_to_1024(arr: np.ndarray) -> np.ndarray:
     """
     Interpolate an array to 1024 points.
-    
+
     Args:
         arr: Input array to interpolate
-        
+
     Returns:
         Interpolated array with 1024 points
     """
@@ -189,3 +189,26 @@ def shift_to_rest_frame(wave: np.ndarray, flux: np.ndarray, redshift: float) -> 
     """Shift observed spectrum to rest-frame using the given redshift."""
     rest_wave = wave / (1 + redshift)
     return rest_wave, flux
+
+def construct_osc_reference(sn_name: str) -> str:
+    """
+    Construct OSC reference from SN name.
+
+    Args:
+        sn_name: Supernova name (e.g., 'sn2002er', '2002er')
+
+    Returns:
+        OSC reference (e.g., 'osc-sn2002er-0')
+    """
+    clean_name = sn_name.strip()
+
+    # If it already starts with "osc-", return as is
+    if clean_name.startswith('osc-'):
+        return clean_name
+
+    # If it starts with "sn", construct the full OSC reference
+    if clean_name.lower().startswith('sn'):
+        return f"osc-{clean_name}-0"
+
+    # If it doesn't start with "sn", assume it's a SN name and add "sn" prefix
+    return f"osc-sn{clean_name}-0"

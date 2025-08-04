@@ -100,6 +100,90 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
 
       <DialogContent sx={{ pt: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexDirection: { xs: 'column', sm: 'row' } }}>
+          {/* Transformer Model Card - RECOMMENDED */}
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            style={{ flex: 1 }}
+          >
+            <Card
+              sx={{
+                background: 'rgba(255, 255, 255, 0.1)',
+                backdropFilter: 'blur(10px)',
+                border: '2px solid rgba(255, 152, 0, 0.6)',
+                color: 'white',
+                height: '100%',
+                boxShadow: '0 0 20px rgba(255, 152, 0, 0.4), 0 0 40px rgba(255, 152, 0, 0.2)',
+                position: 'relative',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: -2,
+                  left: -2,
+                  right: -2,
+                  bottom: -2,
+                  background: 'linear-gradient(45deg, rgba(255, 152, 0, 0.3), rgba(255, 193, 7, 0.3))',
+                  borderRadius: 'inherit',
+                  zIndex: -1,
+                  animation: 'pulse 2s infinite',
+                },
+                '@keyframes pulse': {
+                  '0%': { opacity: 0.6 },
+                  '50%': { opacity: 1 },
+                  '100%': { opacity: 0.6 },
+                },
+              }}
+            >
+              <CardActionArea
+                onClick={() => handleModelSelect('transformer')}
+                sx={{ height: '100%', p: 2 }}
+              >
+                <CardContent sx={{ textAlign: 'center' }}>
+                  <Box sx={{ position: 'relative' }}>
+                    <AutoAwesomeIcon sx={{ fontSize: 48, mb: 2, color: '#ff9800' }} />
+                    <Chip
+                      label="RECOMMENDED"
+                      size="small"
+                      sx={{
+                        position: 'absolute',
+                        top: -10,
+                        right: -10,
+                        backgroundColor: '#ff9800',
+                        color: 'white',
+                        fontWeight: 'bold',
+                        fontSize: '0.7rem',
+                        height: 20,
+                      }}
+                    />
+                  </Box>
+                  <Typography variant="h5" component="h3" sx={{ mb: 1, fontWeight: 600 }}>
+                    Transformer Model
+                  </Typography>
+                  <Typography variant="body2" sx={{ mb: 2, opacity: 0.8 }}>
+                    Advanced transformer-based model with 5-class classification
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, justifyContent: 'center' }}>
+                    <Chip
+                      label="Transformer"
+                      size="small"
+                      sx={{ backgroundColor: 'rgba(255, 152, 0, 0.2)', color: '#ff9800' }}
+                    />
+                    <Chip
+                      label="5 Classes"
+                      size="small"
+                      sx={{ backgroundColor: 'rgba(255, 152, 0, 0.2)', color: '#ff9800' }}
+                    />
+                    <Chip
+                      label="Fast Inference"
+                      size="small"
+                      sx={{ backgroundColor: 'rgba(255, 152, 0, 0.2)', color: '#ff9800' }}
+                    />
+                  </Box>
+                </CardContent>
+              </CardActionArea>
+            </Card>
+          </motion.div>
+
           {/* Dash Model Card */}
           <motion.div
             whileHover={{ scale: 1.02 }}
@@ -142,55 +226,6 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
                       label="RLap Scores"
                       size="small"
                       sx={{ backgroundColor: 'rgba(76, 175, 80, 0.2)', color: '#4caf50' }}
-                    />
-                  </Box>
-                </CardContent>
-              </CardActionArea>
-            </Card>
-          </motion.div>
-
-          {/* Transformer Model Card */}
-          <motion.div
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            style={{ flex: 1 }}
-          >
-            <Card
-              sx={{
-                background: 'rgba(255, 255, 255, 0.1)',
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
-                color: 'white',
-                height: '100%',
-              }}
-            >
-              <CardActionArea
-                onClick={() => handleModelSelect('transformer')}
-                sx={{ height: '100%', p: 2 }}
-              >
-                <CardContent sx={{ textAlign: 'center' }}>
-                  <AutoAwesomeIcon sx={{ fontSize: 48, mb: 2, color: '#ff9800' }} />
-                  <Typography variant="h5" component="h3" sx={{ mb: 1, fontWeight: 600 }}>
-                    Transformer Model
-                  </Typography>
-                  <Typography variant="body2" sx={{ mb: 2, opacity: 0.8 }}>
-                    Advanced transformer-based model with 5-class classification
-                  </Typography>
-                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, justifyContent: 'center' }}>
-                    <Chip
-                      label="Transformer"
-                      size="small"
-                      sx={{ backgroundColor: 'rgba(255, 152, 0, 0.2)', color: '#ff9800' }}
-                    />
-                    <Chip
-                      label="5 Classes"
-                      size="small"
-                      sx={{ backgroundColor: 'rgba(255, 152, 0, 0.2)', color: '#ff9800' }}
-                    />
-                    <Chip
-                      label="Fast Inference"
-                      size="small"
-                      sx={{ backgroundColor: 'rgba(255, 152, 0, 0.2)', color: '#ff9800' }}
                     />
                   </Box>
                 </CardContent>

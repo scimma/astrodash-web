@@ -32,7 +32,7 @@ export interface ProcessResponse {
       age: string;
       probability: number;
       redshift?: number;
-      rlap?: number;
+      rlap?: number | string;
       reliable: boolean;
     }>;
     best_match: {
@@ -110,13 +110,7 @@ class Api {
     }
   }
 
-  async getOSCReferences(): Promise<string[]> {
-    const response = await axios.get(`${API_BASE_URL}/api/v1/osc-references`);
-    if (response.data.status === 'success') {
-      return response.data.references;
-    }
-    throw new Error(response.data.message || 'Failed to fetch OSC references');
-  }
+
 
   async getAnalysisOptions(): Promise<AnalysisOptionsResponse> {
     const response = await axios.get(`${API_BASE_URL}/api/v1/analysis-options`);

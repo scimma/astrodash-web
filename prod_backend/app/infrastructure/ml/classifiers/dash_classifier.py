@@ -178,12 +178,99 @@ class DashClassifier(BaseClassifier):
             if m['type'] == best_type and m['age'] == best_age:
                 m['reliable'] = reliable_flag
 
+        # Check if RLAP calculation is requested
+        calculate_rlap = getattr(spectrum, 'calculate_rlap', False)
+        if not calculate_rlap and hasattr(spectrum, 'meta') and spectrum.meta:
+            calculate_rlap = spectrum.meta.get('processing_params', {}).get('calculate_rlap', False)
+        logger.info(f"RLAP calculation requested: {calculate_rlap}")
+
+        if calculate_rlap:
+            logger.info("=== STARTING RLAP CALCULATION ===")
+            try:
+                # Import RLAP calculation functions
+                from app.infrastructure.ml.rlap_calculator import prepare_log_wavelength_and_templates, get_templates_for_type_age, compute_rlap_for_matches, normalize_age_bin, get_nonzero_minmax, calculate_rlap_with_redshift
+
+                # Prepare templates and log wavelength grid
+                log_wave, input_flux_log, snTemplates, dwlog, nw, w0, w1 = prepare_log_wavelength_and_templates(spectrum)
+
+                # Calculate RLAP for all top 3 matches
+                for i, match in enumerate(matches[:3]):
+                    sn_type = match['type']
+                    age = match['age']
+                    age_norm = normalize_age_bin(age)
+
+                    logger.info(f"Looking for template for RLap match {i+1}: sn_type='{sn_type}', age='{age}' (normalized: '{age_norm}')")
+
+                    if sn_type in snTemplates:
+                        logger.info(f"Available age bins for {sn_type}: {list(snTemplates[sn_type].keys())}")
+                    else:
+                        logger.warning(f"SN type '{sn_type}' not found in templates")
+
+                    # Get templates for this match
+                    template_fluxes, template_names, template_minmax_indexes = get_templates_for_type_age(snTemplates, sn_type, age_norm, log_wave)
+                    logger.info(f"Found {len(template_fluxes)} templates for {sn_type}/{age_norm}")
+
+                    if template_fluxes:
+                        try:
+                            logger.info(f"Computing RLAP for match {i+1} with found templates")
+                            input_minmax_index = get_nonzero_minmax(input_flux_log)
+                            rlap_label, used_redshift, rlap_warning = calculate_rlap_with_redshift(
+                                log_wave, input_flux_log, template_fluxes, template_names, template_minmax_indexes, input_minmax_index,
+                                redshift=match['redshift'] if hasattr(spectrum, 'known_z') and spectrum.known_z else None
+                            )
+                            match['rlap'] = rlap_label
+                            match['rlap_warning'] = rlap_warning
+                            logger.info(f"RLAP for match {i+1} ({sn_type}): {rlap_label} (warning: {rlap_warning})")
+                        except Exception as e:
+                            logger.error(f"Error during RLAP calculation for match {i+1} ({sn_type}): {e}")
+                            match['rlap'] = "N/A"
+                            match['rlap_warning'] = True
+                            logger.info(f"Setting RLAP to 'N/A' for match {i+1} due to calculation error")
+                    else:
+                        logger.error(f"No valid templates found for RLap calculation for match {i+1}.")
+                        match['rlap'] = "N/A"
+                        match['rlap_warning'] = True
+                        logger.info(f"Setting RLAP to 'N/A' for match {i+1} due to no templates")
+
+                # Update best_match with RLAP from the best match
+                best_match['rlap'] = matches[0]['rlap']
+                best_match['rlap_warning'] = matches[0]['rlap_warning']
+
+                logger.info(f"RLap score calculated: {best_match.get('rlap', 'N/A')} (warning: {best_match.get('rlap_warning', False)})")
+                logger.info("=== FINISHED RLAP CALCULATION ===")
+
+            except Exception as e:
+                logger.error(f"Error during RLAP calculation setup: {e}")
+                # Set RLAP to "N/A" if calculation fails
+                for m in matches:
+                    m['rlap'] = "N/A"
+                    m['rlap_warning'] = True
+                best_match['rlap'] = "N/A"
+                best_match['rlap_warning'] = True
+        else:
+            logger.info("RLAP calculation skipped as requested by user.")
+            # Set default RLAP values when calculation is skipped
+            for m in matches:
+                m['rlap'] = None
+                m['rlap_warning'] = False
+            best_match['rlap'] = None
+            best_match['rlap_warning'] = False
+
         # Return only top 3 matches for display, but use all for probability calculation
-        return {
+        result = {
             'best_matches': matches[:3],  # Only return top 3 for display
             'best_match': best_match,
             'reliable_matches': reliable_flag
         }
+
+        # Debug logging to see what RLAP values are being returned
+        logger.info("=== FINAL RESPONSE DEBUG ===")
+        logger.info(f"Best match RLAP: {best_match.get('rlap', 'None')}")
+        for i, match in enumerate(matches[:3]):
+            logger.info(f"Match {i+1} ({match['type']}): RLAP = {match.get('rlap', 'None')}")
+        logger.info("=== END RESPONSE DEBUG ===")
+
+        return result
 
     def load_model_from_state_dict(self, state_dict, n_classes):
         """

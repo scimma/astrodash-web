@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Container,
   Box,
@@ -39,13 +39,14 @@ import { ResponsiveContainer } from 'recharts';
 import AnalysisOptionPanel from './AnalysisOptionPanel';
 import CloseIcon from '@mui/icons-material/Close';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ModelType } from './ModelSelectionDialog';
+import ModelSelectionDialog, { ModelType } from './ModelSelectionDialog';
 import { styled } from '@mui/material/styles';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import StarIcon from '@mui/icons-material/Star';
 import WhatshotIcon from '@mui/icons-material/Whatshot';
 import LensBlurIcon from '@mui/icons-material/LensBlur';
 import { keyframes } from '@mui/system';
+import html2canvas from 'html2canvas';
 
 // Spacey card style
 const SpaceCard = styled(Paper)(({ theme }) => ({
@@ -98,6 +99,16 @@ interface TemplateOverlay {
   spectrum: TemplateSpectrum | null;
 }
 
+// Type for classification matches
+type ClassificationMatch = {
+  type: string;
+  age: string;
+  probability: number;
+  redshift?: number;
+  rlap?: number | string;
+  reliable: boolean;
+};
+
 // Template colors for different overlays (move outside component to avoid useEffect dependency warning)
 const templateColors = [
   '#d62728', '#ff7f0e', '#2ca02c', '#1f77b4', '#9467bd',
@@ -116,19 +127,22 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   const location = useLocation();
 
   // Get the selected model from navigation state, default to 'dash'
-  let selectedModel: ModelType = location.state?.model;
-  if (!selectedModel) {
+  const getInitialModel = (): ModelType => {
+    if (location.state?.model) {
+      return location.state.model;
+    }
     const stored = localStorage.getItem('astrodash_selected_model');
     if (stored) {
       try {
-        selectedModel = JSON.parse(stored);
+        return JSON.parse(stored);
       } catch {
-        selectedModel = 'dash';
+        return 'dash';
       }
-    } else {
-      selectedModel = 'dash';
     }
-  }
+    return 'dash';
+  };
+
+  const [selectedModel, setSelectedModel] = useState<ModelType>(getInitialModel());
 
   // State for file selection
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -141,6 +155,8 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   const [maxWave, setMaxWave] = useState<string>('10000');
   const [smoothing, setSmoothing] = useState<number>(0);
   const [calculateRlap, setCalculateRlap] = useState<boolean>(false);
+  const [currentModelType, setCurrentModelType] = useState<string | undefined>(undefined);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
 
   // State for analysis
   const [snType, setSnType] = useState<string>('');
@@ -149,14 +165,7 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   const [loading, setLoading] = useState<boolean>(false);
 
   // Best matches state
-  const [bestMatches, setBestMatches] = useState<Array<{
-    type: string;
-    age: string;
-    probability: number;
-    redshift?: number;
-    rlap?: number;
-    reliable: boolean;
-  }>>([]);
+  const [bestMatches, setBestMatches] = useState<Array<ClassificationMatch>>([]);
 
   // Add OSC reference state
   const [oscRef, setOscRef] = useState<string>('');
@@ -189,6 +198,9 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   // Add state for customizing plot
   const [customizeOpen, setCustomizeOpen] = useState(false);
 
+  // Add state for model selection dialog
+  const [modelDialogOpen, setModelDialogOpen] = useState(false);
+
   // Add pulse animation for the top Chip
   const pulse = keyframes`
     0% { transform: scale(1); }
@@ -207,6 +219,13 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       }
     }
   }, [spectrumData]);
+
+  // Auto-check known redshift when Transformer model is selected
+  useEffect(() => {
+    if (selectedModel === 'transformer') {
+      setKnownZ(true);
+    }
+  }, [selectedModel]);
 
   // Fetch analysis options on mount
   useEffect(() => {
@@ -395,6 +414,13 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
   };
 
   const handleProcess = async () => {
+    // Validate redshift requirement for Transformer model
+    if (selectedModel === 'transformer' && (!zValue || isNaN(parseFloat(zValue)))) {
+      setError('Redshift value is required for Transformer model. Please enter a valid redshift.');
+      setErrorOpen(true);
+      return;
+    }
+
     console.log('Starting process with params:', {
       smoothing,
       knownZ,
@@ -461,7 +487,10 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       console.log('Setting bestMatches:', response.classification?.best_matches);
       console.log('Full response:', response);
       console.log('Classification object:', response.classification);
+      console.log('Model type from response:', response.model_type);
+      console.log('RLAP values in best matches:', response.classification?.best_matches?.map(m => ({ type: m.type, age: m.age, rlap: m.rlap, rlapType: typeof m.rlap })));
       setBestMatches(response.classification?.best_matches || []);
+      setCurrentModelType(response.model_type);
 
       // Clear template overlays when new spectrum is processed
       setTemplateOverlays([]);
@@ -485,19 +514,48 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
     setTemplateOverlays([]);
     setShowTemplates(false);
     setError(null);
+    setCurrentModelType(undefined); // Clear model type when clearing the form
   };
 
-  const handleDownload = () => {
-    if (!spectrumData) return;
+  const handleDownload = async () => {
+    if (!spectrumData || !chartContainerRef.current) return;
 
-    const dataStr = JSON.stringify(spectrumData, null, 2);
-    const dataBlob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(dataBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'spectrum_analysis.json';
-    link.click();
-    URL.revokeObjectURL(url);
+    try {
+      // Capture the chart container as an image
+      const canvas = await html2canvas(chartContainerRef.current, {
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+      });
+
+      // Convert canvas to blob and download
+      canvas.toBlob((blob: Blob | null) => {
+        if (blob) {
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+
+          // Generate filename with timestamp
+          const timestamp = new Date().toISOString().split('T')[0];
+          const filename = `spectrum_plot_${timestamp}.png`;
+          link.download = filename;
+
+          link.click();
+          URL.revokeObjectURL(url);
+        }
+      }, 'image/png');
+    } catch (error) {
+      console.error('Error saving chart as image:', error);
+      // Fallback to JSON download if image capture fails
+      const dataStr = JSON.stringify(spectrumData, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'spectrum_analysis.json';
+      link.click();
+      URL.revokeObjectURL(url);
+    }
   };
 
   const toggleTemplateVisibility = (index: number) => {
@@ -521,6 +579,15 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
 
   const removeTemplateOverlay = (index: number) => {
     setTemplateOverlays(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Handle model selection
+  const handleModelSelect = (model: ModelType) => {
+    // Update localStorage
+    localStorage.setItem('astrodash_selected_model', JSON.stringify(model));
+    // Update the selectedModel state
+    setSelectedModel(model);
+    setModelDialogOpen(false);
   };
 
   // Compute the min/max for XAxis domain to include only the spectrum data
@@ -717,6 +784,41 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
           >
             Astrodash Supernova Classifier
           </Typography>
+          {/* Model indicator */}
+          <Chip
+            label={
+              typeof selectedModel === 'object' && selectedModel.user
+                ? 'User Model'
+                : `${selectedModel === 'transformer' ? 'Transformer' : 'Dash'} Model`
+            }
+            onClick={() => setModelDialogOpen(true)}
+            sx={{
+              backgroundColor: typeof selectedModel === 'object' && selectedModel.user
+                ? 'rgba(156, 39, 176, 0.2)'
+                : selectedModel === 'transformer'
+                  ? 'rgba(255, 152, 0, 0.2)'
+                  : 'rgba(76, 175, 80, 0.2)',
+              color: typeof selectedModel === 'object' && selectedModel.user
+                ? '#9c27b0'
+                : selectedModel === 'transformer'
+                  ? '#ff9800'
+                  : '#4caf50',
+              border: `1px solid ${
+                typeof selectedModel === 'object' && selectedModel.user
+                  ? '#9c27b0'
+                  : selectedModel === 'transformer'
+                    ? '#ff9800'
+                    : '#4caf50'
+              }`,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              '&:hover': {
+                transform: 'scale(1.05)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+              },
+            }}
+            size="small"
+          />
         </Toolbar>
       </AppBar>
 
@@ -738,16 +840,16 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
             <Box sx={{ mb: 2 }}>
               <TextField
                 fullWidth
-                label="OSC Reference"
+                label="Supernova Name"
                 value={oscRef}
                 onChange={handleOscRefChange}
                 onKeyPress={handleOscRefKeyPress}
-                placeholder="e.g., osc-sn2002er-8"
+                placeholder="e.g., sn2002er"
                 size="small"
                 sx={{ mb: 1 }}
               />
               <Typography variant="caption" color="text.secondary">
-                Enter an OSC reference (e.g., osc-sn2002er-8) or upload a file
+                Enter a supernova name (e.g., sn2002er) or upload a file
               </Typography>
             </Box>
 
@@ -816,16 +918,46 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                   <Checkbox
                     checked={knownZ}
                     onChange={(e) => setKnownZ(e.target.checked)}
+                    disabled={selectedModel === 'transformer'} // Disable checkbox for Transformer
+                    sx={{ color: 'white' }}
                   />
                 }
-                label="Known Redshift"
+                label={
+                  <span style={{ color: 'white' }}>
+                    Known Redshift
+                    {selectedModel === 'transformer' && <span style={{ color: '#ff6b6b', marginLeft: '4px' }}>*</span>}
+                  </span>
+                }
               />
-              {knownZ && (
+              {(knownZ || selectedModel === 'transformer') && (
                 <TextField
                   size="small"
                   value={zValue}
                   onChange={(e) => setZValue(e.target.value)}
-                  sx={{ ml: 2 }}
+                  label="Redshift Value"
+                  required={selectedModel === 'transformer'}
+                  sx={{ ml: 2, width: 120,
+                    '& .MuiInputBase-input': { color: 'white' },
+                    '& .MuiOutlinedInput-root': {
+                      '& fieldset': { borderColor: 'white' },
+                      '&:hover fieldset': { borderColor: 'white' },
+                      '&.Mui-focused fieldset': { borderColor: 'white' },
+                    },
+                  }}
+                  type="number"
+                  InputLabelProps={{ style: { color: 'white' } }}
+                />
+              )}
+              {selectedModel === 'dash' && (
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={calculateRlap}
+                      onChange={(e) => setCalculateRlap(e.target.checked)}
+                      sx={{ color: 'white' }}
+                    />
+                  }
+                  label={<span style={{ color: 'white' }}>Calculate RLAP</span>}
                 />
               )}
             </Box>
@@ -872,22 +1004,16 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
               </Box>
             </Box>
 
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={calculateRlap}
-                  onChange={(e) => setCalculateRlap(e.target.checked)}
-                />
-              }
-              label="Calculate rlap scores"
-            />
-
             <Box sx={{ mt: 2 }}>
               <Button
                 variant="contained"
                 color="primary"
                 onClick={handleProcess}
-                disabled={loading || (!selectedFile && !oscRef)}
+                disabled={
+                  loading ||
+                  (!selectedFile && !oscRef) ||
+                  (selectedModel === 'transformer' && (!zValue || isNaN(parseFloat(zValue))))
+                }
                 fullWidth
                 sx={{
                   py: 1.5,
@@ -926,6 +1052,7 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                           const isTop = index === 0;
                           console.log('Processing match:', match); // Debug log
                           console.log('Match type:', match.type, 'Match age:', match.age); // Debug individual fields
+                          console.log('RLAP debug - currentModelType:', currentModelType, 'calculateRlap:', calculateRlap, 'rlap value:', match.rlap, 'rlap type:', typeof match.rlap);
 
                           // Combine type and age for display
                           const combinedType = match.type && match.age ? `${match.type} (${match.age})` : match.type || 'Unknown';
@@ -953,7 +1080,8 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                               />
                               <Typography variant="body2" sx={{ color: '#b0b8c9', ml: 1 }}>
                                 Prob: {(match.probability * 100).toFixed(1)}%
-                                {match.rlap !== undefined && match.rlap !== null &&
+                                {currentModelType === 'dash' && calculateRlap &&
+                                  match.rlap !== undefined && match.rlap !== null && match.rlap !== "N/A" &&
                                   <> | RLAP: {match.rlap}</>
                                 }
                               </Typography>
@@ -995,7 +1123,7 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                   <Fade in={!!spectrumData} timeout={700}>
                     <div className="mt-8">
                       <h2 className="text-xl font-bold mb-4">Spectrum Plot</h2>
-                      <div className="bg-white p-4 rounded-lg shadow">
+                      <div className="bg-white p-4 rounded-lg shadow" ref={chartContainerRef}>
                         <ResponsiveContainer width="100%" height={400}>
                           <LineChart
                             key={spectrumData ? `spectrum-${spectrumData.spectrum.x[0]}` : 'no-spectrum'}
@@ -1276,6 +1404,13 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Model Selection Dialog */}
+      <ModelSelectionDialog
+        open={modelDialogOpen}
+        onClose={() => setModelDialogOpen(false)}
+        onModelSelect={handleModelSelect}
+      />
 
       {/* Footer */}
       <Box component="footer" sx={{

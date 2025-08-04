@@ -43,25 +43,6 @@ const LandingPage: React.FC = () => {
         overflow: 'hidden',
       }}
     >
-      {/* Animated background elements */}
-      <Box
-        sx={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          opacity: 0.1,
-          background: 'radial-gradient(circle at center, #fff 0%, transparent 70%)',
-          animation: 'pulse 4s ease-in-out infinite',
-          '@keyframes pulse': {
-            '0%': { transform: 'scale(1)' },
-            '50%': { transform: 'scale(1.2)' },
-            '100%': { transform: 'scale(1)' },
-          },
-        }}
-      />
-
       <Container maxWidth="md">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

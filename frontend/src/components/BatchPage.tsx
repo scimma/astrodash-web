@@ -3,8 +3,9 @@ import { Box, Typography, Button, Paper, TextField, Slider, Checkbox, FormContro
 import { Delete as DeleteIcon } from '@mui/icons-material';
 import { api } from '../services/api';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ModelType } from './ModelSelectionDialog';
+import ModelSelectionDialog, { ModelType } from './ModelSelectionDialog';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import SaveIcon from '@mui/icons-material/Save';
 
 // Helper to generate random stars
 const generateStars = (count: number) => {
@@ -42,7 +43,23 @@ const BatchPage: React.FC = () => {
   const location = useLocation();
 
   // Get the selected model from navigation state, default to 'dash'
-  const selectedModel: ModelType = location.state?.model || 'dash';
+  const getInitialModel = (): ModelType => {
+    if (location.state?.model) {
+      return location.state.model;
+    }
+    const stored = localStorage.getItem('astrodash_selected_model');
+    if (stored) {
+      try {
+        return JSON.parse(stored);
+      } catch {
+        return 'dash';
+      }
+    }
+    return 'dash';
+  };
+
+  const [selectedModel, setSelectedModel] = useState<ModelType>(getInitialModel());
+  const [modelDialogOpen, setModelDialogOpen] = useState(false);
 
   const [files, setFiles] = useState<File[]>([]);
   const [smoothing, setSmoothing] = useState<number>(0);
@@ -63,7 +80,69 @@ const BatchPage: React.FC = () => {
   };
 
   const removeFile = (index: number) => {
-    setFiles(prevFiles => prevFiles.filter((_, i) => i !== index));
+    setFiles(files.filter((_, i) => i !== index));
+  };
+
+  const downloadCSV = () => {
+    if (!results) return;
+
+    // Create CSV content
+    const headers = [
+      'File Name',
+      'Status',
+      'Best Match Type',
+      'Best Match Age',
+      'Probability',
+      'RLAP',
+      'Redshift'
+    ];
+
+    const csvContent = [
+      headers.join(','),
+      ...Object.entries(results).map(([fname, result]: any) => {
+        const status = result.error ? 'Error' : 'Success';
+        const type = result.classification?.best_match?.type ?? '';
+        const age = result.classification?.best_match?.age ?? '';
+        const probability = result.classification?.best_match?.probability?.toFixed(3) ?? '';
+        const rlap = (selectedModel === 'dash' && calculateRlap &&
+          result.classification?.best_match?.rlap !== undefined &&
+          result.classification?.best_match?.rlap !== null &&
+          result.classification?.best_match?.rlap !== "N/A")
+          ? result.classification.best_match.rlap
+          : '';
+        const redshift = result.classification?.best_match?.redshift ?? '';
+
+        return [
+          `"${fname}"`,
+          `"${status}"`,
+          `"${type}"`,
+          `"${age}"`,
+          probability,
+          rlap,
+          redshift
+        ].join(',');
+      })
+    ].join('\n');
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `batch_classification_results_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Handle model selection
+  const handleModelSelect = (model: ModelType) => {
+    // Update localStorage
+    localStorage.setItem('astrodash_selected_model', JSON.stringify(model));
+    // Update the selectedModel state
+    setSelectedModel(model);
+    setModelDialogOpen(false);
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -170,6 +249,7 @@ const BatchPage: React.FC = () => {
                 ? 'User Model'
                 : `${selectedModel === 'transformer' ? 'Transformer' : 'Dash'} Model`
             }
+            onClick={() => setModelDialogOpen(true)}
             sx={{
               backgroundColor: typeof selectedModel === 'object' && selectedModel.user
                 ? 'rgba(156, 39, 176, 0.2)'
@@ -188,6 +268,12 @@ const BatchPage: React.FC = () => {
                     ? '#ff9800'
                     : '#4caf50'
               }`,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              '&:hover': {
+                transform: 'scale(1.05)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+              },
             }}
             size="small"
           />
@@ -300,6 +386,20 @@ const BatchPage: React.FC = () => {
                 />
               )}
             </Box>
+            {selectedModel === 'dash' && (
+              <Box sx={{ mb: 2 }}>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={calculateRlap}
+                      onChange={(e) => setCalculateRlap(e.target.checked)}
+                      sx={{ color: 'white' }}
+                    />
+                  }
+                  label={<span style={{ color: 'white' }}>Calculate RLAP</span>}
+                />
+              </Box>
+            )}
             <Box sx={{ mb: 2, display: 'flex', gap: 2 }}>
               <TextField
                 size="small"
@@ -336,16 +436,6 @@ const BatchPage: React.FC = () => {
                 InputLabelProps={{ style: { color: 'white' } }}
               />
             </Box>
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={calculateRlap}
-                  onChange={(e) => setCalculateRlap(e.target.checked)}
-                  sx={{ color: 'white' }}
-                />
-              }
-              label={<span style={{ color: 'white' }}>Calculate rlap scores</span>}
-            />
             <Box sx={{ mt: 3 }}>
               <Button
                 variant="contained"
@@ -363,7 +453,26 @@ const BatchPage: React.FC = () => {
         </Paper>
         {results && (
           <Box sx={{ width: '90vw', maxWidth: 1200 }}>
-            <Typography variant="h5" gutterBottom sx={{ color: 'white', textShadow: '0 1px 4px #000' }}>Results</Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h5" sx={{ color: 'white', textShadow: '0 1px 4px #000' }}>Results</Typography>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={downloadCSV}
+                disabled={loading}
+                sx={{
+                  minWidth: 'auto',
+                  px: 2,
+                  py: 1,
+                  borderRadius: '50%',
+                  width: 48,
+                  height: 48
+                }}
+                title="Download CSV"
+              >
+                {loading ? <CircularProgress size={24} color="inherit" /> : <SaveIcon />}
+              </Button>
+            </Box>
             <TableContainer component={Paper} sx={{ mb: 4, background: 'rgba(20, 30, 50, 0.97)' }}>
               <Table size="small">
                 <TableHead>
@@ -390,7 +499,10 @@ const BatchPage: React.FC = () => {
                       <TableCell sx={{ color: 'white' }}>{result.classification?.best_match?.age ?? '-'}</TableCell>
                       <TableCell sx={{ color: 'white' }}>{result.classification?.best_match?.probability?.toFixed(3) ?? '-'}</TableCell>
                       <TableCell sx={{ color: 'white' }}>{
-                        result.classification?.best_match?.rlap !== undefined && result.classification?.best_match?.rlap !== null
+                        selectedModel === 'dash' && calculateRlap &&
+                          result.classification?.best_match?.rlap !== undefined &&
+                          result.classification?.best_match?.rlap !== null &&
+                          result.classification?.best_match?.rlap !== "N/A"
                           ? result.classification.best_match.rlap
                           : '-'
                       }</TableCell>
@@ -403,6 +515,13 @@ const BatchPage: React.FC = () => {
           </Box>
         )}
       </Box>
+
+      {/* Model Selection Dialog */}
+      <ModelSelectionDialog
+        open={modelDialogOpen}
+        onClose={() => setModelDialogOpen(false)}
+        onModelSelect={handleModelSelect}
+      />
     </Box>
   );
 };

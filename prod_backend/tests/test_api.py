@@ -44,14 +44,7 @@ def test_analysis_options():
     assert len(data["sn_types"]) > 0
     assert isinstance(data["age_bins_by_type"], dict)
 
-def test_osc_references():
-    """Test the OSC references endpoint."""
-    response = client.get("/api/v1/osc-references")
-    assert response.status_code == 200
-    data = response.json()
-    assert "status" in data
-    assert "references" in data
-    assert data["status"] == "success"
+
 
 def test_api_documentation():
     """Test that API documentation is available."""

@@ -101,14 +101,18 @@ class MLClassifier:
                     'reliable_matches': False
                 }
 
-                        # Check if user wants RLAP calculation
+            # Check if user wants RLAP calculation
             calculate_rlap = processed_data.get('calculate_rlap', False)
+            logger.info(f"RLAP calculation requested: {calculate_rlap}")
+            logger.info(f"processed_data keys: {list(processed_data.keys())}")
+            logger.info(f"processed_data['calculate_rlap']: {processed_data.get('calculate_rlap')}")
 
             # Initialize variables that might be used later
             estimated_redshift = None
             estimated_redshift_err = None
 
             if calculate_rlap:
+                logger.info("=== STARTING RLAP CALCULATION ===")
                 # RLap calculation using real template spectra
                 logger.info("Calculating RLap score using real template spectra.")
                 log_wave, input_flux_log, snTemplates, dwlog, nw, w0, w1 = prepare_log_wavelength_and_templates(processed_data)
@@ -121,10 +125,17 @@ class MLClassifier:
                     sn_type = best_match['type']
                     age = best_match['age']
                     age_norm = normalize_age_bin(age)
-                    logger.debug(f"Looking for template for RLap: sn_type='{sn_type}', age='{age}' (normalized: '{age_norm}')")
+                    logger.info(f"Looking for template for RLap: sn_type='{sn_type}', age='{age}' (normalized: '{age_norm}')")
+                    logger.info(f"Available SN types in templates: {list(snTemplates.keys())}")
+                    if sn_type in snTemplates:
+                        logger.info(f"Available age bins for {sn_type}: {list(snTemplates[sn_type].keys())}")
+                    else:
+                        logger.warning(f"SN type '{sn_type}' not found in templates")
+
                     if not known_z:
                         # Redshift estimation using all templates for best match
                         template_fluxes, template_names, template_minmax_indexes = get_templates_for_type_age(snTemplates, sn_type, age_norm, log_wave)
+                        logger.info(f"Found {len(template_fluxes)} templates for {sn_type}/{age_norm}")
                         if template_fluxes:
                             input_minmax_index = minmax_indexes[0] if minmax_indexes else get_nonzero_minmax(input_flux_log)
                             est_z, _, _, est_z_err = get_median_redshift(
@@ -142,16 +153,19 @@ class MLClassifier:
                 if not template_fluxes:
                     logger.error("No valid templates found for RLap calculation.")
                     rlap_label, rlap_warning = "N/A", True
+                    logger.info(f"Setting RLAP to '{rlap_label}' for all matches due to no templates")
                     for m in matches:
                         m['rlap'] = rlap_label
                         m['rlap_warning'] = rlap_warning
                     best_match['rlap'] = rlap_label
                     best_match['rlap_warning'] = rlap_warning
                 else:
+                    logger.info("Computing RLAP for matches with found templates")
                     matches, best_match = compute_rlap_for_matches(
                         matches, best_match, log_wave, input_flux_log, template_fluxes, template_names, template_minmax_indexes, known_z
                     )
                 logger.info(f"RLap score calculated: {best_match.get('rlap', 'N/A')} (warning: {best_match.get('rlap_warning', False)})")
+                logger.info("=== FINISHED RLAP CALCULATION ===")
             else:
                 logger.info("RLAP calculation skipped as requested by user.")
                 # Set default RLAP values when calculation is skipped

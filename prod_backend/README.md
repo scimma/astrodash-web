@@ -110,7 +110,6 @@ docker-compose logs -f backend
 ### Analysis Options
 - `GET /api/v1/analysis-options` - Get available analysis options
 - `GET /api/v1/template-statistics` - Get template statistics
-- `GET /api/v1/osc-references` - Get OSC references
 
 ### Line List
 - `GET /api/v1/line-list` - Get line list data
@@ -305,4 +304,4 @@ For issues and questions:
 - Check the API documentation at `/docs`
 - Review the health endpoint at `/health`
 - Check application logs
-- Run the test suite to verify functionality 
+- Run the test suite to verify functionality
