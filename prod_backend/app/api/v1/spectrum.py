@@ -63,7 +63,6 @@ async def get_template_spectrum(sn_type: str = Query('Ia'), age_bin: str = Query
         logger.info(f"Requested sn_type: {repr(sn_type_decoded)}")
         logger.info(f"Requested age_bin: {repr(age_bin_decoded)}")
 
-        # Use template path from settings
         npz_path = settings.template_path
         logger.info(f"Looking for template file at: {npz_path}")
         logger.info(f"File exists: {os.path.exists(npz_path)}")
@@ -72,7 +71,7 @@ async def get_template_spectrum(sn_type: str = Query('Ia'), age_bin: str = Query
             logger.error(f"Template data file not found: {npz_path}")
             raise HTTPException(status_code=404, detail="Template data file not found.")
 
-        # Use the same logic as the old backend
+        # parsing logic from original dash
         data = np.load(npz_path, allow_pickle=True)
         logger.info(f"Loaded npz file, keys: {list(data.keys())}")
 
@@ -104,7 +103,7 @@ async def get_template_spectrum(sn_type: str = Query('Ia'), age_bin: str = Query
         logger.info(f"snInfo shape: {snInfo.shape}, type: {type(snInfo)}")
         logger.info(f"Loading only the first template (index 0) out of {snInfo.shape[0]} available templates")
 
-        # Only load the first template - skip all others for performance
+        # Only load first, placeholder for now
         template = snInfo[0]
         logger.info(f"template shape: {template.shape if hasattr(template, 'shape') else 'no shape'}, type: {type(template)}")
 
@@ -144,8 +143,6 @@ async def get_template_statistics(
     except Exception as e:
         logger.error(f"Error fetching template statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch template statistics: {str(e)}")
-
-
 
 @router.post("/process")
 async def process_spectrum(
@@ -191,10 +188,9 @@ async def process_spectrum(
         classification_service = ClassificationService(model_factory)
         processing_service = SpectrumProcessingService()
 
-        # Get spectrum data
+        # Get spectrum data, construct OSC ref if needed
         osc_ref = parsed_params.get('oscRef')
         if osc_ref:
-            # Construct proper OSC reference from SN name
             osc_ref = construct_osc_reference(osc_ref)
             logger.info(f"Constructed OSC reference: {osc_ref}")
 
@@ -218,7 +214,6 @@ async def process_spectrum(
                 settings=settings,
                 params=parsed_params
             )
-            # User model returns a dict, sanitize numpy types
             result_dict = result.copy()
             result_dict['results'] = sanitize_for_json(result_dict['results'])
             result_dict['meta'] = sanitize_for_json(result_dict.get('meta', {}))
@@ -232,7 +227,7 @@ async def process_spectrum(
             result_dict['results'] = sanitize_for_json(result_dict['results'])
             result_dict['meta'] = sanitize_for_json(result_dict.get('meta', {}))
 
-        # Return both spectrum data and classification results in frontend-expected format
+        # Return spectrum data and classification results as expected by frontend
         return {
             "spectrum": {
                 "x": processed_spectrum.x,

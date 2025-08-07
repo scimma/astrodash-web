@@ -215,28 +215,49 @@ class AstroDashPyTorchNet(nn.Module):
     def __init__(self, n_types, im_width=32):
         super().__init__()
         self.im_width = im_width
-        self.features = nn.Sequential(
+
+        # Layer1: Conv(1→32) + ReLU + MaxPool
+        self.layer1 = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=5, padding='same'),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.MaxPool2d(kernel_size=2, stride=2, padding=0),  # Match TF behavior
+        )
+
+        # Layer2: Conv(32→64) + ReLU + MaxPool
+        self.layer2 = nn.Sequential(
             nn.Conv2d(32, 64, kernel_size=5, padding='same'),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.MaxPool2d(kernel_size=2, stride=2, padding=0),  # Match TF behavior
         )
-        pooled_size = (self.im_width // 4)
-        self.classifier = nn.Sequential(
-            nn.Linear(64 * pooled_size * pooled_size, 1024),
-            nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(1024, n_types),
-        )
+
+        # FC layers (only use the main path, ignore the parallel branch)
+        self.fc1 = nn.Linear(4096, 1024)  # 64 * 8 * 8 = 4096
+        self.dropout = nn.Dropout(0.5)
+        self.output = nn.Linear(1024, n_types)
 
     def forward(self, x):
         x = x.view(-1, 1, self.im_width, self.im_width)
-        x = self.features(x)
-        x = x.view(x.size(0), -1)
-        x = self.classifier(x)
-        return F.softmax(x, dim=1)
+
+        # Layer1
+        h_pool1 = self.layer1(x)
+
+        # Layer2
+        h_pool2 = self.layer2(h_pool1)
+
+        # Reshape to match TensorFlow's flattening
+        # PyTorch: (batch, channels, height, width) -> (batch, channels * height * width)
+        # TensorFlow: (batch, height, width, channels) -> (batch, height * width * channels)
+        # Both should result in (batch, 64 * 8 * 8) = (batch, 4096)
+        # But we need to transpose to match TensorFlow's channel ordering
+        h_pool2_transposed = h_pool2.permute(0, 2, 3, 1)  # NCHW -> NHWC
+        h_pool2_flat = h_pool2_transposed.reshape(h_pool2.size(0), -1)
+        h_fc1 = F.relu(self.fc1(h_pool2_flat))
+
+        # Readout: dropout on h_fc1, then output (ignore the parallel branch)
+        h_fc_drop = self.dropout(h_fc1)
+        output = self.output(h_fc_drop)
+
+        return F.softmax(output, dim=1)
 
 # Transformer blocks
 class SinusoidalMLPPositionalEmbedding(nn.Module):

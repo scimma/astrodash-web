@@ -92,7 +92,11 @@ class DashClassifier(BaseClassifier):
             self.model = None
             return
         state_dict = torch.load(self.model_path, map_location=self.device)
-        n_types = state_dict['classifier.3.weight'].shape[0]
+        # Check for the new layer name first, fall back to old name for compatibility
+        if 'output.weight' in state_dict:
+            n_types = state_dict['output.weight'].shape[0]
+        else:
+            n_types = state_dict['classifier.3.weight'].shape[0]
         self.model = self.load_model_from_state_dict(state_dict, n_types)
         logger.info(f"Dash model loaded from {self.model_path}")
 
