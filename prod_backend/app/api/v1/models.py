@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from app.core.dependencies import get_app_settings, get_sqlalchemy_model_repository
 from app.domain.services.model_service import ModelService
-from app.shared.schemas.user_model import UserModelSchema
+from app.shared.schemas.user_model import UserModelSchema, ModelUploadResponse, UserModelInfo, ModelInfoResponse
 from app.domain.models.user_model import UserModel
 from app.infrastructure.storage.model_storage import ModelStorage
 from app.shared.utils.validators import ValidationError
@@ -13,49 +13,19 @@ import logging
 logger = logging.getLogger("models_api")
 router = APIRouter()
 
-class ModelUploadResponse(BaseModel):
-    """Enhanced response model for model uploads."""
-    status: str
-    message: str
-    model_id: Optional[str] = None
-    model_filename: Optional[str] = None
-    class_mapping: Optional[Dict[str, int]] = None
-    output_shape: Optional[List[int]] = None
-    input_shape: Optional[List[int]] = None
-    model_info: Optional[Dict[str, Any]] = None
-
-class UserModelInfo(BaseModel):
-    model_id: str
-    description: str = ""
-
-class ModelInfoResponse(BaseModel):
-    """Response model for detailed model information."""
-    model_id: str
-    name: Optional[str] = None
-    description: Optional[str] = None
-    owner: Optional[str] = None
-    uploaded_at: Optional[str] = None
-    file_size_bytes: Optional[int] = None
-    class_mapping: Optional[Dict[str, int]] = None
-    input_shape: Optional[List[int]] = None
-    output_shape: Optional[List[int]] = None
-    n_classes: Optional[int] = None
-    model_type: Optional[str] = None
-    total_parameters: Optional[int] = None
-    trainable_parameters: Optional[int] = None
-
 @router.post("/upload-model", response_model=ModelUploadResponse)
 async def upload_model(
     file: UploadFile = File(...),
     class_mapping: str = Form(...),
     input_shape: str = Form(...),
+    name: str = Form(""),
     description: str = Form(""),
     owner: str = Form(""),
     settings = Depends(get_app_settings),
     repo = Depends(get_sqlalchemy_model_repository)
 ):
     """
-    Upload and validate a PyTorch model with comprehensive validation.
+    Upload and validate a user's PyTorch model.
 
     This endpoint performs:
     1. File extension validation
@@ -80,6 +50,7 @@ async def upload_model(
             filename=file.filename,
             class_mapping_str=class_mapping,
             input_shape_str=input_shape,
+            name=name if name else file.filename,  # Use provided name or default to filename
             description=description,
             owner=owner
         )
@@ -138,17 +109,60 @@ async def models_health_check():
     return {"status": "healthy", "message": "Models endpoint is working"}
 
 @router.get("/models", response_model=List[UserModelSchema])
-async def list_models(repo = Depends(get_sqlalchemy_model_repository)):
+async def list_models(
+    repo = Depends(get_sqlalchemy_model_repository),
+    settings = Depends(get_app_settings)
+):
     """
-    List all uploaded models.
+    List all uploaded models with additional metadata.
     """
     try:
         service = ModelService(repo)
         models = await service.list_models()
-        return [UserModelSchema(**m.__dict__) for m in models]
+
+        # Load additional metadata for each model
+        model_storage = ModelStorage(settings.user_model_dir)
+        enhanced_models = []
+
+        for model in models:
+            try:
+                # Get basic model data
+                model_data = model.__dict__.copy()
+
+                # Load additional metadata from storage
+                try:
+                    class_mapping = model_storage.load_class_mapping(model.id)
+                    input_shape = model_storage.load_input_shape(model.id)
+                    metadata = model_storage.load_model_metadata(model.id)
+
+                    # Add the additional fields that frontend expects
+                    model_data.update({
+                        "class_mapping": class_mapping,
+                        "input_shape": input_shape,
+                        "model_filename": model.name,  # Use the name field which contains the original filename
+                        "model_id": model.id  # Ensure model_id is available
+                    })
+                except Exception as e:
+                    logger.warning(f"Failed to load metadata for model {model.id}: {e}")
+                    # Provide fallback values
+                    model_data.update({
+                        "class_mapping": None,
+                        "input_shape": None,
+                        "model_filename": model.name,  # Use the name field which contains the original filename
+                        "model_id": model.id
+                    })
+
+                enhanced_models.append(UserModelSchema(**model_data))
+
+            except Exception as e:
+                logger.error(f"Failed to process model {model.id}: {e}")
+                # Skip this model if there's an error
+                continue
+
+        return enhanced_models
+
     except Exception as e:
         logger.error(f"Failed to list models: {e}")
-        # Return empty list instead of failing
         return []
 
 @router.get("/models/{model_id}", response_model=ModelInfoResponse)

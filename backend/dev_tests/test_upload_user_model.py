@@ -8,12 +8,15 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '../app/services'))
 from transformer_model import spectraTransformerEncoder
 
-API_URL = 'http://localhost:5000'
+API_URL = 'http://localhost:8000'
 TRANSFORMER_MODEL_PATH = os.path.join(
     os.path.dirname(__file__), '..', 'astrodash_models', 'yuqing_models', 'TF_wiserep_v6.pt'
 )
 
-TORCHSCRIPT_MODEL_PATH = os.path.join(tempfile.gettempdir(), 'TF_wiserep_v6_torchscript.pt')
+TORCHSCRIPT_MODEL_PATH = os.path.join(
+    os.path.dirname(__file__), '..', 'astrodash_models', 'yuqing_models', 'TF_wiserep_v6_torchscript.pt'
+)
+
 
 def is_torchscript_model(path):
     try:
@@ -86,7 +89,7 @@ def test_upload_and_classify():
             'input_shape': json.dumps(INPUT_SHAPE)
         }
         print('Uploading model...')
-        resp = requests.post(f'{API_URL}/api/upload-model', files=files, data=data)
+        resp = requests.post(f'{API_URL}/api/v1/models/upload-model', files=files, data=data)
         print('Upload response:', resp.status_code, resp.text)
         resp.raise_for_status()
         model_id = resp.json()['model_id']
@@ -115,4 +118,5 @@ def test_upload_and_classify():
     print('Test complete. Use model_id in frontend or adapt backend for direct spectrum input.')
 
 if __name__ == '__main__':
-    test_upload_and_classify()
+    x = export_torchscript_if_needed()
+    print(x)

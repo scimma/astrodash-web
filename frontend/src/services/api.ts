@@ -206,11 +206,19 @@ class Api {
     }
   }
 
-  async uploadModel({ file, classMapping, inputShape }: { file: File, classMapping: object, inputShape: number[] }) {
+  async uploadModel({ file, classMapping, inputShape, name, description }: {
+    file: File,
+    classMapping: object,
+    inputShape: number[],
+    name?: string,
+    description?: string
+  }) {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('class_mapping', JSON.stringify(classMapping));
     formData.append('input_shape', JSON.stringify(inputShape));
+    if (name) formData.append('name', name);
+    if (description) formData.append('description', description);
     const response = await axios.post(`${API_BASE_URL}/api/v1/upload-model`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
@@ -226,6 +234,32 @@ class Api {
       console.warn('Failed to fetch user models:', error);
       // Return empty array if models endpoint fails
       return [];
+    }
+  }
+
+  async deleteModel(modelId: string): Promise<any> {
+    try {
+      const response = await axios.delete(`${API_BASE_URL}/api/v1/models/${modelId}`);
+      return response.data;
+    } catch (error) {
+      console.error('API: Error deleting model:', error);
+      throw error;
+    }
+  }
+
+  async updateModel(modelId: string, updates: { name?: string; description?: string }): Promise<any> {
+    try {
+      const formData = new FormData();
+      if (updates.name) formData.append('name', updates.name);
+      if (updates.description) formData.append('description', updates.description);
+
+      const response = await axios.put(`${API_BASE_URL}/api/v1/models/${modelId}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return response.data;
+    } catch (error) {
+      console.error('API: Error updating model:', error);
+      throw error;
     }
   }
 }

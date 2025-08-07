@@ -30,7 +30,7 @@ async def batch_process(
     settings = Depends(get_app_settings)
 ):
     """
-    Unified batch processing endpoint that accepts either:
+    Batch classification endpoint that accepts either:
     - A zip file containing multiple spectrum files, OR
     - A list of individual spectrum files
 
@@ -104,7 +104,7 @@ async def batch_process(
         logger.error(f"Exception in batch_process: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Batch process error: {e}")
 
-# Keep the old endpoint for backward compatibility, but mark as deprecated
+# Keeping old endpoint so it works when called by frontend, will remove later
 @router.post("/batch-process-multiple", deprecated=True)
 async def batch_process_multiple(
     params: str = Form('{}'),
@@ -122,7 +122,7 @@ async def batch_process_multiple(
     """
     logger.warning("Using deprecated /batch-process-multiple endpoint. Use /batch-process instead.")
 
-    # Delegate to the main batch_process endpoint
+    # Delegate
     return await batch_process(
         params=params,
         files=files,

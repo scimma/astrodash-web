@@ -12,11 +12,19 @@ import {
   CardActionArea,
   Chip,
   TextField,
+  IconButton,
+  Tooltip,
+  Dialog as EditDialog,
+  DialogTitle as EditDialogTitle,
+  DialogContent as EditDialogContent,
+  DialogActions as EditDialogActions,
 } from '@mui/material';
 import { motion } from 'framer-motion';
 import ScienceIcon from '@mui/icons-material/Science';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
 import { api } from '../services/api';
 
 export type ModelType = 'dash' | 'transformer' | { user: string }; // user: model_id
@@ -39,13 +47,24 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
   const [file, setFile] = React.useState<File | null>(null);
   const [classMapping, setClassMapping] = React.useState('');
   const [inputShape, setInputShape] = React.useState('');
+  const [modelName, setModelName] = React.useState('');
+  const [modelDescription, setModelDescription] = React.useState('');
+  const [editDialogOpen, setEditDialogOpen] = React.useState(false);
+  const [editingModel, setEditingModel] = React.useState<any>(null);
+  const [editName, setEditName] = React.useState('');
+  const [editDescription, setEditDescription] = React.useState('');
+  const [updating, setUpdating] = React.useState(false);
 
   React.useEffect(() => {
     // Fetch user models (stub for now)
-    api.getUserModels().then(setUserModels);
+    api.getUserModels().then(models => {
+      console.log('Fetched user models:', models);
+      setUserModels(models);
+    });
   }, [uploadSuccess]);
 
   const handleModelSelect = (model: ModelType) => {
+    console.log('ModelSelectionDialog: handleModelSelect called with:', model);
     onModelSelect(model);
     onClose();
   };
@@ -63,15 +82,81 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
     try {
       const parsedClassMapping = JSON.parse(classMapping);
       const parsedInputShape = JSON.parse(inputShape);
-      const result = await api.uploadModel({ file: file!, classMapping: parsedClassMapping, inputShape: parsedInputShape });
+      const result = await api.uploadModel({
+        file: file!,
+        classMapping: parsedClassMapping,
+        inputShape: parsedInputShape,
+        name: modelName,
+        description: modelDescription
+      });
       setUploadSuccess(result);
       setFile(null);
       setClassMapping('');
       setInputShape('');
+      setModelName('');
+      setModelDescription('');
     } catch (err: any) {
       setUploadError(err?.response?.data?.message || err?.message || 'Upload failed');
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleDeleteModel = async (modelId: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent card selection
+
+    console.log('Attempting to delete model with ID:', modelId);
+    console.log('Model ID type:', typeof modelId);
+
+    if (!modelId || modelId === 'undefined') {
+      alert('Invalid model ID. Cannot delete model.');
+      return;
+    }
+
+    if (window.confirm('Are you sure you want to delete this model? This action cannot be undone.')) {
+      try {
+        await api.deleteModel(modelId);
+        // Refresh the user models list
+        const updatedModels = await api.getUserModels();
+        setUserModels(updatedModels);
+      } catch (err: any) {
+        console.error('Failed to delete model:', err);
+        alert('Failed to delete model: ' + (err?.response?.data?.detail || err?.message || 'Unknown error'));
+      }
+    }
+  };
+
+  const handleEditModel = (model: any, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent card selection
+    setEditingModel(model);
+    setEditName(model.name || '');
+    setEditDescription(model.description || '');
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateModel = async () => {
+    if (!editingModel) return;
+
+    setUpdating(true);
+    try {
+      await api.updateModel(editingModel.model_id, {
+        name: editName,
+        description: editDescription
+      });
+
+      // Refresh the user models list
+      const updatedModels = await api.getUserModels();
+      setUserModels(updatedModels);
+
+      setEditDialogOpen(false);
+      setEditingModel(null);
+      setEditName('');
+      setEditDescription('');
+    } catch (err: any) {
+      console.error('Failed to update model:', err);
+      alert('Failed to update model: ' + (err?.response?.data?.detail || err?.message || 'Unknown error'));
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -272,6 +357,26 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
                   />
                 </Button>
                 <TextField
+                  label="Model Name"
+                  value={modelName}
+                  onChange={e => setModelName(e.target.value)}
+                  size="small"
+                  fullWidth
+                  placeholder="Enter a name for your model"
+                  sx={{ background: 'rgba(255,255,255,0.08)', borderRadius: 1, input: { color: 'white' }, label: { color: 'white' } }}
+                />
+                <TextField
+                  label="Description"
+                  value={modelDescription}
+                  onChange={e => setModelDescription(e.target.value)}
+                  size="small"
+                  fullWidth
+                  multiline
+                  rows={2}
+                  placeholder="Describe your model (optional)"
+                  sx={{ background: 'rgba(255,255,255,0.08)', borderRadius: 1, input: { color: 'white' }, label: { color: 'white' } }}
+                />
+                <TextField
                   label="Class Mapping (JSON)"
                   value={classMapping}
                   onChange={e => setClassMapping(e.target.value)}
@@ -279,6 +384,7 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
                   fullWidth
                   multiline
                   minRows={2}
+                  placeholder='{"Ia": 0, "Ib": 1, "Ic": 2}'
                   sx={{ background: 'rgba(255,255,255,0.08)', borderRadius: 1, input: { color: 'white' }, label: { color: 'white' } }}
                 />
                 <TextField
@@ -287,13 +393,14 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
                   onChange={e => setInputShape(e.target.value)}
                   size="small"
                   fullWidth
+                  placeholder="[1, 1024] or [[1, 1024], [1, 1024], [1, 1]]"
                   sx={{ background: 'rgba(255,255,255,0.08)', borderRadius: 1, input: { color: 'white' }, label: { color: 'white' } }}
                 />
                 <Button
                   variant="outlined"
                   color="primary"
                   onClick={handleUpload}
-                  disabled={!file || !classMapping || !inputShape || uploading}
+                  disabled={!file || !classMapping || !inputShape || !modelName || uploading}
                   sx={{ mt: 1 }}
                 >
                   {uploading ? 'Uploading...' : 'Upload Model'}
@@ -301,14 +408,15 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
                 {uploadError && <Typography color="error" sx={{ mt: 1 }}>{uploadError}</Typography>}
                 {uploadSuccess && (
                   <Box sx={{ mt: 1, color: '#90ee90', fontSize: 14 }}>
-                    Uploaded! Model ID: <b>{uploadSuccess.model_id}</b>
-                    <br />Output shape: {JSON.stringify(uploadSuccess.output_shape)}
-                    <br />Input shape: {JSON.stringify(uploadSuccess.input_shape)}
+                    <Box sx={{ mb: 2 }}>
+                      Uploaded! Model ID: <b>{uploadSuccess.model_id}</b>
+                      <br />Output shape: {JSON.stringify(uploadSuccess.output_shape)}
+                      <br />Input shape: {JSON.stringify(uploadSuccess.input_shape)}
+                    </Box>
                     <Button
                       variant="contained"
                       color="success"
                       size="small"
-                      sx={{ mt: 1 }}
                       onClick={() => handleModelSelect({ user: uploadSuccess.model_id })}
                     >
                       Use This Model
@@ -327,7 +435,14 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
               User-Uploaded Models
             </Typography>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-              {userModels.map((model) => (
+              {userModels
+                .sort((a, b) => {
+                  // Sort by creation date, newest first
+                  const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+                  const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+                  return dateB - dateA;
+                })
+                .map((model) => (
                 <Card
                   key={model.model_id}
                   sx={{
@@ -335,24 +450,80 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
                     color: 'white',
                     minWidth: 260,
                     maxWidth: 320,
+                    position: 'relative',
                   }}
                 >
-                  <CardActionArea onClick={() => handleModelSelect({ user: model.model_id })}>
+                  <CardActionArea onClick={() => {
+                    console.log('Card clicked for model:', model);
+                    handleModelSelect({ user: model.model_id });
+                  }}>
                     <CardContent>
                       <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                        Model ID: {model.model_id}
+                        {model.name || model.model_filename || `Model ID: ${model.model_id}`}
                       </Typography>
+                      {model.description && (
+                        <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>
+                          {model.description}
+                        </Typography>
+                      )}
                       <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>
                         Filename: {model.model_filename}
                       </Typography>
                       <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>
-                        Input Shape: {JSON.stringify(model.input_shape)}
+                        Input Shape: {model.input_shape ?
+                          (Array.isArray(model.input_shape[0]) ?
+                            model.input_shape.map((shape: any, i: number) => `Input ${i+1}: [${shape.join(', ')}]`).join(', ') :
+                            `[${model.input_shape.join(', ')}]`
+                          ) : 'N/A'}
                       </Typography>
                       <Typography variant="body2" sx={{ opacity: 0.8, mb: 1 }}>
-                        Classes: {Object.keys(model.class_mapping).join(', ')}
+                        Classes: {model.class_mapping ? Object.keys(model.class_mapping).join(', ') : 'N/A'}
                       </Typography>
                     </CardContent>
                   </CardActionArea>
+
+                  {/* Action buttons */}
+                  <Box sx={{
+                    position: 'absolute',
+                    top: 8,
+                    right: 8,
+                    display: 'flex',
+                    gap: 0.5,
+                    zIndex: 1
+                  }}>
+                    <Tooltip title="Edit model">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => handleEditModel(model, e)}
+                        sx={{
+                          color: 'rgba(255, 255, 255, 0.7)',
+                          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                          '&:hover': {
+                            color: 'white',
+                            backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                          },
+                        }}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete model">
+                      <IconButton
+                        size="small"
+                        onClick={(e) => handleDeleteModel(model.id || model.model_id, e)}
+                        sx={{
+                          color: 'rgba(255, 255, 255, 0.7)',
+                          backgroundColor: 'rgba(255, 0, 0, 0.1)',
+                          '&:hover': {
+                            color: 'white',
+                            backgroundColor: 'rgba(255, 0, 0, 0.3)',
+                          },
+                        }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
                 </Card>
               ))}
             </Box>
@@ -375,6 +546,92 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
           Cancel
         </Button>
       </DialogActions>
+
+      {/* Edit Model Dialog */}
+      <EditDialog
+        open={editDialogOpen}
+        onClose={() => setEditDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: {
+            background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)',
+            color: 'white',
+            borderRadius: '16px',
+          },
+        }}
+      >
+        <EditDialogTitle sx={{ textAlign: 'center' }}>
+          <Typography variant="h5" component="h2" sx={{ fontWeight: 600 }}>
+            Edit Model
+          </Typography>
+        </EditDialogTitle>
+        <EditDialogContent sx={{ pt: 2 }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <TextField
+              label="Model Name"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              fullWidth
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.3)' },
+                  '&:hover fieldset': { borderColor: 'rgba(255, 255, 255, 0.5)' },
+                  '&.Mui-focused fieldset': { borderColor: 'white' },
+                },
+                '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
+                '& .MuiInputBase-input': { color: 'white' },
+              }}
+            />
+            <TextField
+              label="Description"
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              fullWidth
+              multiline
+              rows={3}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  '& fieldset': { borderColor: 'rgba(255, 255, 255, 0.3)' },
+                  '&:hover fieldset': { borderColor: 'rgba(255, 255, 255, 0.5)' },
+                  '&.Mui-focused fieldset': { borderColor: 'white' },
+                },
+                '& .MuiInputLabel-root': { color: 'rgba(255, 255, 255, 0.7)' },
+                '& .MuiInputBase-input': { color: 'white' },
+              }}
+            />
+          </Box>
+        </EditDialogContent>
+        <EditDialogActions sx={{ p: 3, pt: 1 }}>
+          <Button
+            onClick={() => setEditDialogOpen(false)}
+            sx={{
+              color: 'white',
+              borderColor: 'rgba(255, 255, 255, 0.3)',
+              '&:hover': {
+                borderColor: 'white',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              },
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleUpdateModel}
+            disabled={updating}
+            variant="contained"
+            sx={{
+              backgroundColor: '#2196f3',
+              color: 'white',
+              '&:hover': {
+                backgroundColor: '#1976d2',
+              },
+            }}
+          >
+            {updating ? 'Updating...' : 'Update Model'}
+          </Button>
+        </EditDialogActions>
+      </EditDialog>
     </Dialog>
   );
 };

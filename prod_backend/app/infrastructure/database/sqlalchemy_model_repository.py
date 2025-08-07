@@ -16,18 +16,34 @@ class SQLAlchemyModelRepository(ModelRepository):
         self.db = db
 
     async def save(self, model: UserModel) -> UserModel:
-        db_model = UserModelDB(
-            id=model.id,
-            name=model.name,
-            description=model.description,
-            owner=model.owner,
-            model_path=model.model_path,
-            class_mapping_path=model.class_mapping_path,
-            input_shape_path=model.input_shape_path,
-            created_at=model.created_at,
-            meta=model.meta
-        )
-        self.db.merge(db_model)
+        # Check if model already exists
+        existing_model = self.db.query(UserModelDB).filter(UserModelDB.id == model.id).first()
+
+        if existing_model:
+            # Update existing model
+            existing_model.name = model.name
+            existing_model.description = model.description
+            existing_model.owner = model.owner
+            existing_model.model_path = model.model_path
+            existing_model.class_mapping_path = model.class_mapping_path
+            existing_model.input_shape_path = model.input_shape_path
+            existing_model.meta = model.meta
+            db_model = existing_model
+        else:
+            # Create new model
+            db_model = UserModelDB(
+                id=model.id,
+                name=model.name,
+                description=model.description,
+                owner=model.owner,
+                model_path=model.model_path,
+                class_mapping_path=model.class_mapping_path,
+                input_shape_path=model.input_shape_path,
+                created_at=model.created_at,
+                meta=model.meta
+            )
+            self.db.add(db_model)
+
         self.db.commit()
         self.db.refresh(db_model)
         return self._to_domain(db_model)

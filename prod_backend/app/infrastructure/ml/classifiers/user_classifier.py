@@ -15,7 +15,8 @@ class UserClassifier(BaseClassifier):
         self.user_model_id = user_model_id
         self.config = config or get_settings()
         self.model_dir = self.config.user_model_dir
-        self.model_base = os.path.join(self.model_dir, self.user_model_id)
+        # Create subdirectory structure to match ModelStorage
+        self.model_base = os.path.join(self.model_dir, self.user_model_id, self.user_model_id)
         self.model_path = self.model_base + '.pth'
         self.mapping_path = self.model_base + '.classes.json'
         self.input_shape_path = self.model_base + '.input_shape.json'

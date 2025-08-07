@@ -28,6 +28,7 @@ class ModelService:
         filename: str,
         class_mapping_str: str,
         input_shape_str: str,
+        name: str = "",
         description: str = "",
         owner: str = None
     ) -> Tuple[UserModel, Dict[str, Any]]:
@@ -57,24 +58,33 @@ class ModelService:
             # Generate unique model ID
             model_id = str(uuid.uuid4())
 
+            # Prepare input shapes for validation
+            # input_shape can be either a single shape [1, 1024] or multiple shapes [[1, 1024], [1, 1024], [1, 1]]
+            if input_shape and isinstance(input_shape[0], list):
+                # Multiple input shapes already in correct format
+                input_shapes = input_shape
+            else:
+                # Single input shape, wrap in list
+                input_shapes = [input_shape]
+
             # Save model files to storage
             if self.model_storage:
                 file_paths = self.model_storage.save_model_files(
                     model_id=model_id,
                     model_content=model_content,
                     class_mapping=class_mapping,
-                    input_shape=input_shape,
+                    input_shape=input_shape,  # Keep original for storage
                     metadata={"description": description, "owner": owner}
                 )
 
                 # Validate the saved model
                 model_info = self._validate_saved_model(
-                    model_id, [input_shape], class_mapping
+                    model_id, input_shapes, class_mapping
                 )
             else:
                 # Fallback: validate in memory
                 model_info = self._validate_model_in_memory(
-                    model_content, [input_shape], class_mapping
+                    model_content, input_shapes, class_mapping
                 )
                 file_paths = {
                     "model": f"temp_{model_id}.pth",
@@ -86,7 +96,7 @@ class ModelService:
             # Create UserModel instance
             user_model = UserModel(
                 id=model_id,
-                name=filename,
+                name=name if name else filename,  # Use provided name or default to filename
                 description=description,
                 owner=owner,
                 model_path=file_paths["model"],
@@ -103,8 +113,8 @@ class ModelService:
 
         except Exception as e:
             logger.error(f"Model upload failed: {e}")
-            # Cleanup on failure
-            if self.model_storage:
+            # Cleanup on failure - only if model_id was created
+            if self.model_storage and 'model_id' in locals():
                 self.model_storage.cleanup_model_files(model_id)
             raise e
 

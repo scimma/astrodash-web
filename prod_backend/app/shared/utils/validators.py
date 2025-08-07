@@ -1,9 +1,19 @@
 from typing import Any, List, Dict
-from pydantic import validator, ValidationError
+from pydantic import validator, ValidationError as PydanticValidationError
 import numpy as np
 import torch
 import os
 import json
+
+
+class ValidationError(Exception):
+    """Custom validation error for model validation."""
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(self.message)
+
+    def __str__(self):
+        return self.message
 
 
 def validate_spectrum_data(x: List[float], y: List[float]) -> None:
@@ -61,30 +71,30 @@ def validate_user_model(model_path: str, input_shape: List[int], allowed_exts: L
 def validate_class_mapping(class_mapping: Dict[str, int]) -> None:
     """
     Validate class mapping structure and integrity.
-    
+
     Args:
         class_mapping: Dictionary mapping class names to indices
-        
+
     Raises:
         ValidationError: If class mapping is invalid
     """
     if not isinstance(class_mapping, dict) or not class_mapping:
         raise ValidationError("Class mapping must be a non-empty dictionary")
-    
+
     # Check for valid indices
     indices = list(class_mapping.values())
     if not all(isinstance(idx, int) and idx >= 0 for idx in indices):
         raise ValidationError("All class mapping values must be non-negative integers")
-    
+
     # Check for unique indices
     if len(indices) != len(set(indices)):
         raise ValidationError("Class mapping indices must be unique")
-    
+
     # Check for consecutive indices starting from 0
     expected_indices = set(range(len(indices)))
     if set(indices) != expected_indices:
         raise ValidationError("Class mapping indices must be consecutive starting from 0")
-    
+
     # Check for valid class names
     for class_name in class_mapping.keys():
         if not isinstance(class_name, str) or not class_name.strip():
@@ -94,19 +104,19 @@ def validate_class_mapping(class_mapping: Dict[str, int]) -> None:
 def validate_input_shape(input_shape: List[int]) -> None:
     """
     Validate input shape for model compatibility.
-    
+
     Args:
         input_shape: List of integers representing input shape
-        
+
     Raises:
         ValidationError: If input shape is invalid
     """
     if not isinstance(input_shape, list) or not input_shape:
         raise ValidationError("Input shape must be a non-empty list")
-    
+
     if not all(isinstance(dim, int) and dim > 0 for dim in input_shape):
         raise ValidationError("All input shape dimensions must be positive integers")
-    
+
     # Check for reasonable dimensions (prevent extremely large shapes)
     for dim in input_shape:
         if dim > 10000:  # Arbitrary limit
@@ -114,21 +124,21 @@ def validate_input_shape(input_shape: List[int]) -> None:
 
 
 def validate_model_compatibility(
-    model_path: str, 
-    input_shapes: List[List[int]], 
+    model_path: str,
+    input_shapes: List[List[int]],
     class_mapping: Dict[str, int]
 ) -> Dict[str, Any]:
     """
     Comprehensive model validation including loading, shape checking, and output verification.
-    
+
     Args:
         model_path: Path to the model file
         input_shapes: List of input shapes for each model input
         class_mapping: Dictionary mapping class names to indices
-        
+
     Returns:
         Dictionary containing validation results and model info
-        
+
     Raises:
         ValidationError: If validation fails
     """
@@ -137,11 +147,11 @@ def validate_model_compatibility(
         validate_class_mapping(class_mapping)
         for shape in input_shapes:
             validate_input_shape(shape)
-        
+
         # Load and validate model
         if not os.path.exists(model_path):
             raise ValidationError(f"Model file does not exist: {model_path}")
-        
+
         # Try loading as TorchScript
         try:
             model = torch.jit.load(model_path, map_location="cpu")
@@ -149,12 +159,12 @@ def validate_model_compatibility(
             model_type = "torchscript"
         except Exception as e:
             raise ValidationError(f"Failed to load model as TorchScript: {e}")
-        
+
         # Prepare dummy inputs
         dummy_inputs = []
         for shape in input_shapes:
             dummy_inputs.append(torch.randn(*shape))
-        
+
         # Run inference
         with torch.no_grad():
             if len(dummy_inputs) == 1:
@@ -165,13 +175,13 @@ def validate_model_compatibility(
                 output = model(dummy_inputs[0], dummy_inputs[1], dummy_inputs[2])
             else:
                 output = model(*dummy_inputs)
-        
+
         # Extract output shape
         if hasattr(output, 'shape'):
             output_shape = list(output.shape)
         else:
             output_shape = [1]  # Fallback for scalar outputs
-        
+
         # Validate output shape matches class mapping
         n_classes = len(class_mapping)
         if output_shape[-1] != n_classes:
@@ -179,7 +189,7 @@ def validate_model_compatibility(
                 f"Model output shape {output_shape} does not match "
                 f"number of classes {n_classes} in class mapping."
             )
-        
+
         # Collect model information
         model_info = {
             "input_shapes": input_shapes,
@@ -188,7 +198,7 @@ def validate_model_compatibility(
             "model_type": model_type,
             "file_size": os.path.getsize(model_path)
         }
-        
+
         # Try to get model parameters count
         try:
             total_params = sum(p.numel() for p in model.parameters())
@@ -199,9 +209,9 @@ def validate_model_compatibility(
             })
         except Exception:
             pass  # Not critical for validation
-        
+
         return model_info
-        
+
     except Exception as e:
         if isinstance(e, ValidationError):
             raise e
@@ -211,25 +221,37 @@ def validate_model_compatibility(
 def validate_json_string(json_str: str, expected_type: type = dict) -> Any:
     """
     Validate and parse a JSON string.
-    
+
     Args:
         json_str: JSON string to validate
         expected_type: Expected type after parsing
-        
+
     Returns:
         Parsed JSON object
-        
+
     Raises:
         ValidationError: If JSON is invalid or wrong type
     """
+    import logging
+    logger = logging.getLogger("validators")
+
+    logger.info(f"Parsing JSON string: '{json_str}', expected type: {expected_type.__name__}")
+
     try:
         parsed = json.loads(json_str)
+        logger.info(f"JSON parsed successfully: {parsed}, type: {type(parsed)}")
+
         if not isinstance(parsed, expected_type):
+            logger.error(f"Type mismatch: expected {expected_type.__name__}, got {type(parsed).__name__}")
             raise ValidationError(f"Expected {expected_type.__name__}, got {type(parsed).__name__}")
+
+        logger.info(f"JSON validation passed: {parsed}")
         return parsed
     except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error: {e}")
         raise ValidationError(f"Invalid JSON format: {e}")
     except Exception as e:
+        logger.error(f"JSON validation error: {e}")
         raise ValidationError(f"JSON validation failed: {e}")
 
 
@@ -240,33 +262,57 @@ def validate_model_upload_request(
 ) -> tuple[Dict[str, int], List[int]]:
     """
     Validate a complete model upload request.
-    
+
     Args:
         filename: Name of the uploaded file
         class_mapping_str: JSON string containing class mapping
         input_shape_str: JSON string containing input shape
-        
+
     Returns:
         Tuple of (class_mapping, input_shape)
-        
+
     Raises:
         ValidationError: If any validation fails
     """
+    import logging
+    logger = logging.getLogger("validators")
+
+    logger.info(f"Validating model upload request: filename={filename}")
+    logger.info(f"Class mapping string: {class_mapping_str}")
+    logger.info(f"Input shape string: {input_shape_str}")
+
     # Validate file extension
     validate_file_extension(filename, [".pth", ".pt"])
-    
+
     # Parse and validate class mapping
     try:
         class_mapping = validate_json_string(class_mapping_str, dict)
         validate_class_mapping(class_mapping)
+        logger.info(f"Class mapping validation passed: {class_mapping}")
     except Exception as e:
+        logger.error(f"Class mapping validation failed: {e}")
         raise ValidationError(f"Invalid class mapping: {e}")
-    
+
     # Parse and validate input shape
     try:
         input_shape = validate_json_string(input_shape_str, list)
-        validate_input_shape(input_shape)
+        logger.info(f"Input shape parsed: {input_shape}, type: {type(input_shape)}")
+
+        # Handle both single input shape and multiple input shapes
+        if input_shape and isinstance(input_shape[0], list):
+            # Multiple input shapes: [[1, 1024], [1, 1024], [1, 1]]
+            logger.info(f"Validating multiple input shapes: {input_shape}")
+            for i, shape in enumerate(input_shape):
+                logger.info(f"Validating input shape {i}: {shape}")
+                validate_input_shape(shape)
+        else:
+            # Single input shape: [1, 1024]
+            logger.info(f"Validating single input shape: {input_shape}")
+            validate_input_shape(input_shape)
+
+        logger.info(f"Input shape validation passed: {input_shape}")
     except Exception as e:
+        logger.error(f"Input shape validation failed: {e}")
         raise ValidationError(f"Invalid input shape: {e}")
-    
+
     return class_mapping, input_shape
