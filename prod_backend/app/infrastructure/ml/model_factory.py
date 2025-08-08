@@ -3,6 +3,7 @@ from app.infrastructure.ml.classifiers.base import BaseClassifier
 from app.infrastructure.ml.classifiers.dash_classifier import DashClassifier
 from app.infrastructure.ml.classifiers.transformer_classifier import TransformerClassifier
 from app.infrastructure.ml.classifiers.user_classifier import UserClassifier
+from app.core.exceptions import ModelConfigurationException
 
 class ModelFactory:
     """
@@ -23,4 +24,4 @@ class ModelFactory:
         elif model_type == "transformer":
             return TransformerClassifier(self.config)
         else:
-            raise ValueError(f"Unknown model type: {model_type}")
+            raise ModelConfigurationException(f"Unknown model type: {model_type}")

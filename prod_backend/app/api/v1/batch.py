@@ -1,21 +1,20 @@
-from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, Depends
 from typing import Optional, List, Dict, Any, Union
 import json
-import logging
-from app.core.dependencies import (
-    get_sqlalchemy_spectrum_repository,
-    get_model_factory,
-    get_osc_spectrum_repo,
-    get_app_settings
-)
+from app.core.dependencies import get_sqlalchemy_spectrum_repository, get_model_factory, get_osc_spectrum_repo, get_app_settings, get_spectrum_processing_service
 from app.domain.services.spectrum_service import SpectrumService
 from app.domain.services.classification_service import ClassificationService
 from app.domain.services.spectrum_processing_service import SpectrumProcessingService
 from app.domain.services.batch_processing_service import BatchProcessingService
 from app.shared.utils.helpers import sanitize_for_json
 from app.shared.schemas.classification import ClassificationSchema
+from app.config.logging import get_logger
+from app.core.exceptions import (
+    ValidationException,
+    BatchProcessingException
+)
 
-logger = logging.getLogger("batch_api")
+logger = get_logger(__name__)
 router = APIRouter()
 
 @router.post("/batch-process")
@@ -27,7 +26,8 @@ async def batch_process(
     db_repo = Depends(get_sqlalchemy_spectrum_repository),
     model_factory = Depends(get_model_factory),
     osc_repo = Depends(get_osc_spectrum_repo),
-    settings = Depends(get_app_settings)
+    settings = Depends(get_app_settings),
+    processing_service: SpectrumProcessingService = Depends(get_spectrum_processing_service)
 ):
     """
     Batch classification endpoint that accepts either:
@@ -49,15 +49,9 @@ async def batch_process(
 
         # Validate input - must have either zip_file OR files, not both
         if zip_file and files:
-            raise HTTPException(
-                status_code=400,
-                detail="Cannot provide both zip_file and files. Use one or the other."
-            )
+            raise ValidationException("Cannot provide both zip_file and files. Use one or the other.")
         if not zip_file and not files:
-            raise HTTPException(
-                status_code=400,
-                detail="Must provide either zip_file or files parameter."
-            )
+            raise ValidationException("Must provide either zip_file or files parameter.")
 
         # Parse parameters
         parsed_params = json.loads(params) if params else {}
@@ -75,7 +69,6 @@ async def batch_process(
         # Initialize services
         spectrum_service = SpectrumService(db_repo, osc_repo)
         classification_service = ClassificationService(model_factory)
-        processing_service = SpectrumProcessingService()
         batch_service = BatchProcessingService(
             spectrum_service, classification_service, processing_service
         )
@@ -97,12 +90,12 @@ async def batch_process(
         logger.info(f"Batch processing completed successfully.")
         return sanitize_for_json(results)
 
-    except HTTPException:
-        # Re-raise HTTP exceptions (like validation errors)
+    except ValidationException:
+        # Re-raise validation exceptions
         raise
     except Exception as e:
         logger.error(f"Exception in batch_process: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Batch process error: {e}")
+        raise BatchProcessingException(f"Batch process error: {e}")
 
 # Keeping old endpoint so it works when called by frontend, will remove later
 @router.post("/batch-process-multiple", deprecated=True)

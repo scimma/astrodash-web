@@ -1,4 +1,3 @@
-import logging
 from typing import Any, Dict, Optional
 import numpy as np
 from app.infrastructure.ml.dash_utils import (
@@ -9,6 +8,7 @@ from app.shared.utils.helpers import (
     prepare_log_wavelength_and_templates, get_templates_for_type_age, get_nonzero_minmax, normalize_age_bin
 )
 from app.shared.utils.redshift import get_median_redshift
+from app.config.logging import get_logger
 
 class DashClassificationService:
     """
@@ -24,7 +24,7 @@ class DashClassificationService:
         self.model_path_zero_z = model_path_zero_z
         self.model_path_agnostic_z = model_path_agnostic_z
         self.template_npz_path = template_npz_path
-        self.logger = logger or logging.getLogger("dash_classification_service")
+        self.logger = logger or get_logger(__name__)
         self.pars = load_training_parameters(template_npz_path)
 
     async def classify(

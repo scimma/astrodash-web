@@ -1,99 +1,67 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Any, List, Tuple, Dict
-import numpy as np
-import logging
+from typing import Optional, Dict, Any, Tuple, List
 from app.domain.models.spectrum import Spectrum
+from app.config.settings import get_settings
+from app.config.logging import get_logger
+from app.core.exceptions import (
+    TemplateNotFoundException,
+    FileNotFoundException,
+    ModelConfigurationException
+)
+import numpy as np
 import os
 
-logger = logging.getLogger(__name__)
-
+logger = get_logger(__name__)
 
 class SpectrumRepository(ABC):
+    """Abstract base class for spectrum repositories."""
+
     @abstractmethod
     async def save(self, spectrum: Spectrum) -> Spectrum:
-        """
-        Save a spectrum to persistent storage.
-        Not implemented in current backend (placeholder for future DB/file storage).
-        """
+        """Save a spectrum."""
         pass
 
     @abstractmethod
     async def get_by_id(self, spectrum_id: str) -> Optional[Spectrum]:
-        """
-        Retrieve a spectrum by its unique ID.
-        Not implemented in current backend (placeholder for future DB/file storage).
-        """
+        """Get a spectrum by ID."""
         pass
 
     @abstractmethod
     async def get_by_osc_ref(self, osc_ref: str) -> Optional[Spectrum]:
-        """
-        Retrieve a spectrum from the OSC API by its reference string.
-        """
+        """Get a spectrum by OSC reference."""
         pass
 
     @abstractmethod
     async def get_from_file(self, file: Any) -> Optional[Spectrum]:
-        """
-        Retrieve a spectrum from an uploaded file (FITS, .dat, .txt, .lnw).
-        """
+        """Get a spectrum from a file."""
         pass
 
 
 class SpectrumTemplateInterface(ABC):
-    """
-    Abstract base class for spectrum template handling.
-    Defines the contract for template loading and validation.
-    """
+    """Abstract interface for spectrum template handlers."""
 
     @abstractmethod
     async def get_template_spectrum(self, sn_type: str, age_bin: str) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Get template spectrum for a specific SN type and age bin.
-
-        Args:
-            sn_type: Supernova type (e.g., 'Ia-norm', 'Ib-norm')
-            age_bin: Age bin (e.g., '2 to 6', '-10 to -6')
-
-        Returns:
-            Tuple of (wavelength, flux) arrays
-        """
+        """Get template spectrum for given SN type and age bin."""
         pass
 
     @abstractmethod
     async def get_all_templates(self) -> Dict[str, Any]:
-        """
-        Get all available templates.
-
-        Returns:
-            Dictionary containing all template data
-        """
+        """Get all available templates."""
         pass
 
     @abstractmethod
     async def validate_template(self, sn_type: str, age_bin: str) -> bool:
-        """
-        Validate if a template exists for the given SN type and age bin.
-
-        Args:
-            sn_type: Supernova type
-            age_bin: Age bin
-
-        Returns:
-            True if template exists and is valid
-        """
+        """Validate if template exists for given SN type and age bin."""
         pass
 
 
 class DASHSpectrumTemplate(SpectrumTemplateInterface):
-    """
-    DASH-specific template handler.
-    Loads templates from the DASH model's template file.
-    """
+    """DASH-specific template handler."""
 
     def __init__(self, template_path: str):
         self.template_path = template_path
-        self._templates = None
+        self._templates: Optional[Dict[str, Any]] = None
         logger.info(f"DASHSpectrumTemplate initialized with path: {template_path}")
 
     async def get_template_spectrum(self, sn_type: str, age_bin: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -102,16 +70,16 @@ class DASHSpectrumTemplate(SpectrumTemplateInterface):
             templates = await self._load_templates()
 
             if sn_type not in templates:
-                raise ValueError(f"SN type '{sn_type}' not found in templates")
+                raise TemplateNotFoundException(sn_type)
 
             if age_bin not in templates[sn_type]:
-                raise ValueError(f"Age bin '{age_bin}' not found for SN type '{sn_type}'")
+                raise TemplateNotFoundException(sn_type, age_bin)
 
             entry = templates[sn_type][age_bin]
             sn_info = entry.get('snInfo', None)
 
             if not isinstance(sn_info, np.ndarray) or sn_info.shape[0] == 0:
-                raise ValueError(f"No template spectrum available for {sn_type} / {age_bin}")
+                raise TemplateNotFoundException(sn_type, age_bin)
 
             # Get the first template (placeholder for now)
             template = sn_info[0]
@@ -121,9 +89,11 @@ class DASHSpectrumTemplate(SpectrumTemplateInterface):
             logger.info(f"Template spectrum loaded for {sn_type} / {age_bin}")
             return wave, flux
 
+        except TemplateNotFoundException:
+            raise
         except Exception as e:
             logger.error(f"Error loading template spectrum: {e}")
-            raise
+            raise TemplateNotFoundException(sn_type, age_bin)
 
     async def get_all_templates(self) -> Dict[str, Any]:
         """Get all DASH templates."""
@@ -212,7 +182,7 @@ def create_spectrum_template_handler(model_type: str, template_path: Optional[st
             template_path = os.path.join(backend_dir, 'astrodash_models', 'sn_and_host_templates.npz')
 
         if not os.path.exists(template_path):
-            raise FileNotFoundError(f"Template file not found: {template_path}")
+            raise FileNotFoundException(template_path)
 
         return DASHSpectrumTemplate(template_path)
 
@@ -220,4 +190,4 @@ def create_spectrum_template_handler(model_type: str, template_path: Optional[st
         return TransformerSpectrumTemplate()
 
     else:
-        raise ValueError(f"Unsupported model type: {model_type}")
+        raise ModelConfigurationException(f"Unsupported model type: {model_type}")

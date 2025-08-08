@@ -6,11 +6,11 @@ from typing import Any, Optional
 from app.infrastructure.ml.classifiers.base import BaseClassifier
 from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor
 from app.infrastructure.ml.classifiers.architectures import AstroDashPyTorchNet
-import logging
 from app.config.settings import get_settings, Settings
 from app.infrastructure.ml.dash_utils import combined_prob
+from app.config.logging import get_logger
 
-logger = logging.getLogger("dash_classifier")
+logger = get_logger(__name__)
 
 class DashClassifier(BaseClassifier):
     """
@@ -25,9 +25,9 @@ class DashClassifier(BaseClassifier):
         self.model_path = self.config.dash_model_path
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self._load_model()
-        self.nw = getattr(self.config, "nw", 1024)
-        self.w0 = getattr(self.config, "w0", 3500.0)
-        self.w1 = getattr(self.config, "w1", 10000.0)
+        self.nw = self.config.nw
+        self.w0 = self.config.w0
+        self.w1 = self.config.w1
         if not self.processor:
             self.processor = DashSpectrumProcessor(self.w0, self.w1, self.nw)
 

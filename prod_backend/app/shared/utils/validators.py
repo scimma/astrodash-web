@@ -232,8 +232,8 @@ def validate_json_string(json_str: str, expected_type: type = dict) -> Any:
     Raises:
         ValidationError: If JSON is invalid or wrong type
     """
-    import logging
-    logger = logging.getLogger("validators")
+    from app.config.logging import get_logger
+    logger = get_logger(__name__)
 
     logger.info(f"Parsing JSON string: '{json_str}', expected type: {expected_type.__name__}")
 
@@ -274,8 +274,8 @@ def validate_model_upload_request(
     Raises:
         ValidationError: If any validation fails
     """
-    import logging
-    logger = logging.getLogger("validators")
+    from app.config.logging import get_logger
+    logger = get_logger(__name__)
 
     logger.info(f"Validating model upload request: filename={filename}")
     logger.info(f"Class mapping string: {class_mapping_str}")

@@ -47,6 +47,7 @@ import WhatshotIcon from '@mui/icons-material/Whatshot';
 import LensBlurIcon from '@mui/icons-material/LensBlur';
 import { keyframes } from '@mui/system';
 import html2canvas from 'html2canvas';
+import { getUserFriendlyErrorMessage } from '../utils/errorHandling';
 
 // Spacey card style
 const SpaceCard = styled(Paper)(({ theme }) => ({
@@ -496,9 +497,12 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
       setTemplateOverlays([]);
       setShowTemplates(false);
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error processing spectrum:', error);
-      setError('Failed to process spectrum. Please try again.');
+
+      // Use the new error handling utility
+      const errorMessage = getUserFriendlyErrorMessage(error);
+      setError(errorMessage);
       setErrorOpen(true);
     } finally {
       setLoading(false);

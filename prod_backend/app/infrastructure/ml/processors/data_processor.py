@@ -2,9 +2,9 @@ import numpy as np
 from scipy.signal import medfilt
 from scipy.interpolate import splrep, splev
 from typing import Tuple
-import logging
+from app.config.logging import get_logger
 
-logger = logging.getLogger("dash_processor")
+logger = get_logger(__name__)
 
 class DashSpectrumProcessor:
     """

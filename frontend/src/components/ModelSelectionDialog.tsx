@@ -96,7 +96,20 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
       setModelName('');
       setModelDescription('');
     } catch (err: any) {
-      setUploadError(err?.response?.data?.message || err?.message || 'Upload failed');
+      console.error('Model upload error:', err);
+
+      // Enhanced error handling for custom exceptions
+      let errorMessage = 'Upload failed';
+
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (err.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      }
+
+      setUploadError(errorMessage);
     } finally {
       setUploading(false);
     }
@@ -121,7 +134,19 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
         setUserModels(updatedModels);
       } catch (err: any) {
         console.error('Failed to delete model:', err);
-        alert('Failed to delete model: ' + (err?.response?.data?.detail || err?.message || 'Unknown error'));
+
+        // Enhanced error handling for custom exceptions
+        let errorMessage = 'Unknown error';
+
+        if (err.message) {
+          errorMessage = err.message;
+        } else if (err.response?.data?.detail) {
+          errorMessage = err.response.data.detail;
+        } else if (err.response?.data?.message) {
+          errorMessage = err.response.data.message;
+        }
+
+        alert('Failed to delete model: ' + errorMessage);
       }
     }
   };
@@ -154,7 +179,19 @@ const ModelSelectionDialog: React.FC<ModelSelectionDialogProps> = ({
       setEditDescription('');
     } catch (err: any) {
       console.error('Failed to update model:', err);
-      alert('Failed to update model: ' + (err?.response?.data?.detail || err?.message || 'Unknown error'));
+
+      // Enhanced error handling for custom exceptions
+      let errorMessage = 'Unknown error';
+
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (err.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      }
+
+      alert('Failed to update model: ' + errorMessage);
     } finally {
       setUpdating(false);
     }

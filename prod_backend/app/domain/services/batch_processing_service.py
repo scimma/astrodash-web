@@ -1,14 +1,15 @@
 import zipfile
 import io
-import logging
 from typing import List, Dict, Any, Optional, Union
 from fastapi import UploadFile
 from app.domain.services.spectrum_service import SpectrumService
 from app.domain.services.classification_service import ClassificationService
 from app.domain.services.spectrum_processing_service import SpectrumProcessingService
 from app.domain.models.spectrum import Spectrum
+from app.config.logging import get_logger
+from app.core.exceptions import BatchProcessingException, ValidationException
 
-logger = logging.getLogger("batch_processing_service")
+logger = get_logger(__name__)
 
 class BatchProcessingService:
     """
@@ -45,11 +46,15 @@ class BatchProcessingService:
 
         Returns:
             Dictionary with results for each file
+
+        Raises:
+            BatchProcessingException: If batch processing fails
+            ValidationException: If input validation fails
         """
         try:
             # Validate input
             if files is None:
-                raise ValueError("No files provided for batch processing")
+                raise ValidationException("No files provided for batch processing")
 
             # Check if it's a zip file (UploadFile with .zip extension or single file)
             if hasattr(files, 'filename') and hasattr(files, 'read'):
@@ -60,11 +65,13 @@ class BatchProcessingService:
                 # Handle list of individual files
                 return await self._process_file_list(files, params, model_type, model_id)
             else:
-                raise ValueError(f"Invalid files type: {type(files)}. Expected UploadFile or List[UploadFile]")
+                raise ValidationException(f"Invalid files type: {type(files)}. Expected UploadFile or List[UploadFile]")
 
+        except (ValidationException, BatchProcessingException):
+            raise
         except Exception as e:
             logger.error(f"Error in batch processing: {e}", exc_info=True)
-            raise
+            raise BatchProcessingException(f"Batch processing failed: {str(e)}")
 
     async def _process_zip_file(
         self,

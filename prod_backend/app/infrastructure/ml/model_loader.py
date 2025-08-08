@@ -1,11 +1,11 @@
 import torch
 import json
 import os
-import logging
 from typing import Dict, List, Tuple, Any, Optional
 from pathlib import Path
+from app.config.logging import get_logger
 
-logger = logging.getLogger("model_loader")
+logger = get_logger(__name__)
 
 class ModelLoader:
     """

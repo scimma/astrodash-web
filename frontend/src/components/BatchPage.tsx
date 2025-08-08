@@ -197,7 +197,20 @@ const BatchPage: React.FC = () => {
       console.log(`Batch classification completed using ${typeof selectedModel === 'object' && selectedModel.user ? 'user-uploaded' : selectedModel} model`);
 
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Batch classification failed.');
+      console.error('Batch processing error:', err);
+
+      // Enhanced error handling for custom exceptions
+      let errorMessage = 'Batch classification failed.';
+
+      if (err.message) {
+        errorMessage = err.message;
+      } else if (err.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      }
+
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

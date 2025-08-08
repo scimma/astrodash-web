@@ -1,10 +1,10 @@
 import os
 import pickle
-import logging
 from typing import Any, Dict, List, Tuple, Union
 import numpy as np
 import torch
 from app.infrastructure.ml.classifiers.architectures import AstroDashPyTorchNet
+from app.config.logging import get_logger
 
 # Existing utility
 
@@ -39,7 +39,7 @@ def load_training_parameters(models_dir: str) -> Dict[str, Any]:
     Load training parameters for the Dash model from a pickle file.
     """
     params_path = os.path.join(models_dir, "zeroZ/training_params.pickle")
-    logger = logging.getLogger("dash_utils")
+    logger = get_logger(__name__)
     logger.info("Loading training parameters from pickle file.")
     with open(params_path, "rb") as f:
         pars = pickle.load(f, encoding="latin1")
@@ -60,7 +60,7 @@ class AgeBinning:
         self.min_age = min_age
         self.max_age = max_age
         self.age_bin_size = age_bin_size
-        logging.getLogger("dash_utils").debug(f"Initialized AgeBinning: min_age={min_age}, max_age={max_age}, bin_size={age_bin_size}")
+        get_logger(__name__).debug(f"Initialized AgeBinning: min_age={min_age}, max_age={max_age}, bin_size={age_bin_size}")
 
     def age_bin(self, age: float) -> int:
         return int(round(age / self.age_bin_size)) - int(round(self.min_age / self.age_bin_size))
@@ -85,14 +85,14 @@ class CreateLabels:
         self.n_types = n_types
         self.age_binning = AgeBinning(min_age, max_age, age_bin_size)
         self.type_list = type_list
-        logging.getLogger("dash_utils").debug(f"CreateLabels initialized with {n_types} types.")
+        get_logger(__name__).debug(f"CreateLabels initialized with {n_types} types.")
 
     def type_names_list(self) -> np.ndarray:
         type_names_list = []
         for t_type in self.type_list:
             for age_label in self.age_binning.age_labels():
                 type_names_list.append(f"{t_type}: {age_label}")
-        logging.getLogger("dash_utils").debug(f"Generated {len(type_names_list)} type names.")
+        get_logger(__name__).debug(f"Generated {len(type_names_list)} type names.")
         return np.array(type_names_list)
 
 class LoadInputSpectra:
@@ -116,7 +116,7 @@ class LoadInputSpectra:
         # Use DashSpectrumProcessor for preprocessing
         from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor
         processor = DashSpectrumProcessor(w0, w1, self.nw)
-        logger = logging.getLogger("dash_utils")
+        logger = get_logger(__name__)
         logger.info(f"Loading and processing input spectra. z={z}, smooth={smooth}, min_wave={min_wave}, max_wave={max_wave}")
         if isinstance(file_path_or_data, str):
             data = np.loadtxt(file_path_or_data)
@@ -129,7 +129,7 @@ class LoadInputSpectra:
 
     def input_spectra(self):
         import torch
-        logging.getLogger("dash_utils").debug("Converting processed flux to torch tensor for model input.")
+        get_logger(__name__).debug("Converting processed flux to torch tensor for model input.")
         input_images = torch.from_numpy(self.flux).float().reshape(1, -1)
         return input_images, [self.z], self.type_names_list, int(self.nw), self.n_bins, [(self.min_index, self.max_index)]
 
@@ -143,7 +143,7 @@ class BestTypesListSingleRedshift:
         n_bins: int
     ):
         self.type_names_list = np.array(type_names_list)
-        logger = logging.getLogger("dash_utils")
+        logger = get_logger(__name__)
         logger.info(f"Loading PyTorch model from {model_path}")
 
         # Load the saved model state to determine the actual number of output classes
@@ -181,7 +181,7 @@ def combined_prob(best_match_list: list) -> tuple:
     Combine probabilities for best-matching Dash types/ages.
     Returns (best_name, best_age, prob_total, reliable_flag).
     """
-    logger = logging.getLogger("dash_utils")
+    logger = get_logger(__name__)
     prev_name, age, _ = best_match_list[0]
     prob_initial = float(best_match_list[0][2])
     best_name, prob_total = prev_name, 0.0

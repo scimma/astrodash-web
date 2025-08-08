@@ -1,8 +1,8 @@
 import numpy as np
-import logging
 from typing import Tuple, List, Dict, Any, Optional
+from app.config.logging import get_logger
 
-logger = logging.getLogger("redshift_utils")
+logger = get_logger(__name__)
 
 def mean_zero_spectra(flux: np.ndarray, min_idx: int, max_idx: int, nw: int) -> np.ndarray:
     """Mean-zero a region of a spectrum."""
@@ -93,4 +93,4 @@ def get_median_redshift(
         redshiftError = np.std(redshifts)
     else:
         redshiftError = None
-    return medianRedshift, crossCorrs, medianName, stdRedshift 
+    return medianRedshift, crossCorrs, medianName, stdRedshift

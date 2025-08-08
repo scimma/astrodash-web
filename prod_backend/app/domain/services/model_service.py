@@ -4,11 +4,16 @@ from app.domain.repositories.model_repository import ModelRepository
 from app.infrastructure.ml.model_loader import ModelLoader, ModelValidator
 from app.infrastructure.storage.model_storage import ModelStorage
 from app.shared.utils.validators import validate_model_upload_request, ValidationError
-from app.core.exceptions import ModelNotFoundException
-import logging
+from app.core.exceptions import (
+    ModelNotFoundException,
+    ModelValidationException,
+    ModelConflictException,
+    ConfigurationException
+)
+from app.config.logging import get_logger
 import uuid
 
-logger = logging.getLogger("model_service")
+logger = get_logger(__name__)
 
 class ModelService:
     """
@@ -47,7 +52,9 @@ class ModelService:
             Tuple of (UserModel, model_info)
 
         Raises:
-            ValidationError: If validation fails
+            ModelValidationException: If validation fails
+            ModelConflictException: If model with same name already exists
+            ConfigurationException: If storage is not available
         """
         try:
             # Validate the upload request
@@ -157,7 +164,7 @@ class ModelService:
 
         except Exception as e:
             logger.error(f"Model validation failed for {model_id}: {e}")
-            raise ValidationError(f"Model validation failed: {str(e)}")
+            raise ModelValidationException(f"Model validation failed: {str(e)}")
 
     def _validate_model_in_memory(
         self,
@@ -210,7 +217,7 @@ class ModelService:
 
         except Exception as e:
             logger.error(f"In-memory model validation failed: {e}")
-            raise ValidationError(f"Model validation failed: {str(e)}")
+            raise ModelValidationException(f"Model validation failed: {str(e)}")
 
     async def save_model(self, model: UserModel) -> UserModel:
         """
@@ -218,14 +225,14 @@ class ModelService:
         """
         # Validate model before saving
         if not model.is_valid():
-            raise ValidationError("Model is not valid")
+            raise ModelValidationException("Model is not valid")
 
         # Check for duplicate names (if name is provided)
         if model.name:
             existing_models = await self.model_repo.get_by_owner(model.owner or "")
             for existing in existing_models:
                 if existing.name == model.name:
-                    raise ValidationError(f"Model with name '{model.name}' already exists")
+                    raise ModelConflictException(f"Model with name '{model.name}' already exists")
 
         return await self.model_repo.save(model)
 
@@ -271,7 +278,7 @@ class ModelService:
         List models by owner with validation.
         """
         if not owner:
-            raise ValidationError("Owner cannot be empty")
+            raise ValidationException("Owner cannot be empty")
 
         return await self.model_repo.get_by_owner(owner)
 
@@ -285,7 +292,7 @@ class ModelService:
         allowed_updates = {"name", "description", "meta"}
         invalid_updates = set(updates.keys()) - allowed_updates
         if invalid_updates:
-            raise ValidationError(f"Invalid update fields: {invalid_updates}")
+            raise ModelValidationException(f"Invalid update fields: {invalid_updates}")
 
         # Apply updates
         for key, value in updates.items():
@@ -304,7 +311,7 @@ class ModelService:
         Get comprehensive model information.
         """
         if not self.model_storage:
-            raise ValidationError("Model storage not available")
+            raise ConfigurationException("Model storage not available")
 
         try:
             metadata = self.model_storage.load_model_metadata(model_id)
@@ -316,8 +323,9 @@ class ModelService:
                 **metadata,
                 "class_mapping": class_mapping,
                 "input_shape": input_shape,
-                "file_size_bytes": file_size
+                "file_size": file_size,
+                "model_id": model_id
             }
         except Exception as e:
             logger.error(f"Failed to get model info for {model_id}: {e}")
-            raise ValidationError(f"Failed to get model info: {str(e)}")
+            raise ConfigurationException(f"Failed to get model info: {str(e)}")

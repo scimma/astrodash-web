@@ -5,10 +5,10 @@ from typing import Any, Optional, Dict
 from app.infrastructure.ml.classifiers.base import BaseClassifier
 from app.infrastructure.ml.processors.data_processor import TransformerSpectrumProcessor
 from app.domain.services.transformer_classification_service import TransformerClassificationService
-import logging
 from app.config.settings import get_settings, Settings
+from app.config.logging import get_logger
 
-logger = logging.getLogger("transformer_classifier")
+logger = get_logger(__name__)
 
 class TransformerClassifier(BaseClassifier):
     """
@@ -18,13 +18,13 @@ class TransformerClassifier(BaseClassifier):
     def __init__(self, config: Settings = None, processor: Optional[TransformerSpectrumProcessor] = None):
         super().__init__(config)
         self.config = config or get_settings()
-        self.processor = processor or TransformerSpectrumProcessor(target_length=getattr(self.config, "nw", 1024))
+        self.processor = processor or TransformerSpectrumProcessor(target_length=self.config.nw)
         self.model_path = self.config.transformer_model_path
 
         # Initialize the classification service
         self.classification_service = TransformerClassificationService(self.model_path)
 
-        self.label_mapping = getattr(self.config, "label_mapping", {'Ia': 0, 'IIn': 1, 'SLSNe-I': 2, 'II': 3, 'Ib/c': 4})
+        self.label_mapping = self.config.label_mapping
         self.idx_to_label = {v: k for k, v in self.label_mapping.items()}
 
     def _default_model_path(self):

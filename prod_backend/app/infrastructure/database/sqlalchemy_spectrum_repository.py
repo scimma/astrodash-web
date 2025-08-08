@@ -1,59 +1,55 @@
 from typing import Optional, Any
 from sqlalchemy.orm import Session
-from app.domain.repositories.spectrum_repository import SpectrumRepository
 from app.domain.models.spectrum import Spectrum
+from app.domain.repositories.spectrum_repository import SpectrumRepository
 from app.infrastructure.database.models import SpectrumDB
-from datetime import datetime
-import uuid
+from app.config.logging import get_logger
+import pandas as pd
+import io
+import re
+
+logger = get_logger(__name__)
 
 class SQLAlchemySpectrumRepository(SpectrumRepository):
-    """
-    Concrete repository for spectra using SQLAlchemy.
-    Maps between Spectrum domain model and SpectrumDB ORM model.
-    """
+    """SQLAlchemy-based repository for spectrum data."""
+
     def __init__(self, db: Session):
         self.db = db
 
     async def save(self, spectrum: Spectrum) -> Spectrum:
-        db_spectrum = SpectrumDB(
-            id=spectrum.id or str(uuid.uuid4()),
-            osc_ref=spectrum.osc_ref,
-            file_name=spectrum.file_name,
-            x=spectrum.x,
-            y=spectrum.y,
-            redshift=spectrum.redshift,
-            meta=spectrum.meta,
-            created_at=getattr(spectrum, 'created_at', datetime.utcnow())
-        )
-
-        # Use add instead of merge for new objects, and handle the session properly
-        self.db.add(db_spectrum)
-        self.db.commit()
-
-        # Only refresh if the object is in the session
+        """Save spectrum to database."""
         try:
+            db_spectrum = SpectrumDB(
+                id=spectrum.id,
+                osc_ref=spectrum.osc_ref,
+                file_name=spectrum.file_name,
+                x=spectrum.x,
+                y=spectrum.y,
+                redshift=spectrum.redshift,
+                meta=spectrum.meta
+            )
+            self.db.add(db_spectrum)
+            self.db.commit()
             self.db.refresh(db_spectrum)
-        except Exception:
-            # If refresh fails, just return the domain object without refreshing
-            pass
-
-        return self._to_domain(db_spectrum)
+            logger.info(f"Saved spectrum {spectrum.id} to database")
+            return spectrum
+        except Exception as e:
+            logger.error(f"Error saving spectrum to database: {e}", exc_info=True)
+            self.db.rollback()
+            raise
 
     async def get_by_id(self, spectrum_id: str) -> Optional[Spectrum]:
+        """Get spectrum by ID."""
         db_spectrum = self.db.query(SpectrumDB).filter(SpectrumDB.id == spectrum_id).first()
         return self._to_domain(db_spectrum) if db_spectrum else None
 
     async def get_by_osc_ref(self, osc_ref: str) -> Optional[Spectrum]:
+        """Get spectrum by OSC reference."""
         db_spectrum = self.db.query(SpectrumDB).filter(SpectrumDB.osc_ref == osc_ref).first()
         return self._to_domain(db_spectrum) if db_spectrum else None
 
     async def get_from_file(self, file: Any) -> Optional[Spectrum]:
         """Read spectrum from file and save to database."""
-        import pandas as pd
-        import io
-        import logging
-
-        logger = logging.getLogger("sqlalchemy_spectrum_repository")
         filename = getattr(file, 'filename', 'unknown')
         logger.info(f"Reading spectrum file: {filename}")
 
@@ -88,8 +84,6 @@ class SQLAlchemySpectrumRepository(SpectrumRepository):
     async def _read_lnw_file(self, file_obj, filename: str) -> Optional[Spectrum]:
         """Read .lnw file with specific wavelength filtering."""
         try:
-            import re
-
             # Read file contents
             if hasattr(file_obj, 'read'):
                 file_obj.seek(0)
@@ -126,17 +120,12 @@ class SQLAlchemySpectrumRepository(SpectrumRepository):
             return Spectrum(x=list(wavelength), y=list(flux), file_name=filename)
 
         except Exception as e:
-            import logging
-            logger = logging.getLogger("sqlalchemy_spectrum_repository")
             logger.error(f"Error reading .lnw file {filename}: {e}", exc_info=True)
             return None
 
     async def _read_text_file(self, file_obj, filename: str) -> Optional[Spectrum]:
         """Read .dat/.txt file."""
         try:
-            import pandas as pd
-            import io
-
             # Read file contents
             if hasattr(file_obj, 'seek'):
                 file_obj.seek(0)
@@ -183,8 +172,6 @@ class SQLAlchemySpectrumRepository(SpectrumRepository):
                 return None
 
         except Exception as e:
-            import logging
-            logger = logging.getLogger("sqlalchemy_spectrum_repository")
             logger.error(f"Error reading text file {filename}: {e}", exc_info=True)
             return None
 
@@ -212,8 +199,6 @@ class SQLAlchemySpectrumRepository(SpectrumRepository):
             flux = data[flux_col]
             return Spectrum(x=wavelength.tolist(), y=flux.tolist(), file_name=filename)
         except Exception as e:
-            import logging
-            logger = logging.getLogger("sqlalchemy_spectrum_repository")
             logger.error(f"Error reading FITS file {filename}: {e}")
             return None
 

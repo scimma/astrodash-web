@@ -2,10 +2,11 @@ from typing import Dict, Any, Optional, Tuple
 from app.domain.models.spectrum import Spectrum
 from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor, TransformerSpectrumProcessor
 from app.shared.utils.helpers import interpolate_to_1024, normalise_spectrum
+from app.config.logging import get_logger
+from app.core.exceptions import SpectrumProcessingException
 import numpy as np
-import logging
 
-logger = logging.getLogger("spectrum_processing_service")
+logger = get_logger(__name__)
 
 class SpectrumProcessingService:
     """
@@ -38,6 +39,9 @@ class SpectrumProcessingService:
 
         Returns:
             Processed spectrum
+
+        Raises:
+            SpectrumProcessingException: If spectrum processing fails
         """
         try:
             # Extract parameters
@@ -97,7 +101,7 @@ class SpectrumProcessingService:
 
         except Exception as e:
             logger.error(f"Error processing spectrum with parameters: {e}")
-            raise ValueError(f"Spectrum processing failed: {str(e)}")
+            raise SpectrumProcessingException(f"Spectrum processing failed: {str(e)}")
 
     def _apply_wavelength_filter(
         self,

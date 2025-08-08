@@ -1,9 +1,9 @@
-import logging
 from typing import Optional, Any
 from app.domain.models.spectrum import Spectrum
 from app.domain.repositories.spectrum_repository import SpectrumRepository
 from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor
 from app.config.settings import get_settings, Settings
+from app.config.logging import get_logger
 import os
 import json
 import uuid
@@ -14,7 +14,7 @@ from app.shared.utils.validators import validate_spectrum_data, validate_redshif
 # Suppress SSL warnings since we're using verify=False
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-logger = logging.getLogger("osc_spectrum_repository")
+logger = get_logger(__name__)
 
 class FileSpectrumRepository(SpectrumRepository):
     """

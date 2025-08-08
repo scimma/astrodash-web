@@ -1,29 +1,34 @@
-from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
+from fastapi import APIRouter, UploadFile, File, Form, Depends, Query
 from typing import Optional, Dict, Any, List
 from app.shared.schemas.spectrum import SpectrumSchema
 from app.shared.schemas.classification import ClassificationSchema
-from app.core.dependencies import get_sqlalchemy_spectrum_repository, get_osc_spectrum_repo, get_model_factory, get_app_settings, get_template_analysis_service, get_file_spectrum_repo
+from app.core.dependencies import get_sqlalchemy_spectrum_repository, get_osc_spectrum_repo, get_model_factory, get_app_settings, get_template_analysis_service, get_file_spectrum_repo, get_line_list_service, get_spectrum_processing_service
 from app.domain.services.spectrum_service import SpectrumService
 from app.domain.services.classification_service import ClassificationService
-from app.domain.services.model_service import ModelService
 from app.domain.services.spectrum_processing_service import SpectrumProcessingService
 from app.domain.services.template_analysis_service import TemplateAnalysisService
 from app.domain.repositories.spectrum_repository import create_spectrum_template_handler
 from app.domain.models.spectrum import Spectrum
-from app.shared.utils.validators import validate_file_extension, ValidationError
+from app.shared.utils.validators import ValidationError
 from app.domain.services.redshift_service import RedshiftService
 from app.shared.utils.helpers import prepare_log_wavelength_and_templates, get_nonzero_minmax, sanitize_for_json, construct_osc_reference
-from app.infrastructure.storage.model_storage import ModelStorage
+from app.config.logging import get_logger
+from app.core.exceptions import (
+    TemplateNotFoundException,
+    LineListNotFoundException,
+    ElementNotFoundException,
+    ValidationException,
+    SpectrumProcessingException,
+    ConfigurationException
+)
 import json
 import io
-import logging
 import numpy as np
 import os
 from app.domain.services.line_list_service import LineListService
 
 
-
-logger = logging.getLogger("spectrum_api")
+logger = get_logger(__name__)
 router = APIRouter()
 
 @router.get("/analysis-options")
@@ -39,7 +44,6 @@ async def get_analysis_options(
     try:
         logger.info("Requested analysis options")
 
-        # Get analysis options using injected service
         options = await analysis_service.get_analysis_options()
 
         logger.info(f"Analysis options returned {len(options['sn_types'])} SN types")
@@ -51,7 +55,7 @@ async def get_analysis_options(
 
     except Exception as e:
         logger.error(f"Error fetching analysis options: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch analysis options: {str(e)}")
+        raise ConfigurationException(f"Failed to fetch analysis options: {str(e)}")
 
 @router.get("/template-spectrum", response_model=SpectrumSchema)
 async def get_template_spectrum(sn_type: str = Query('Ia'), age_bin: str = Query('2 to 6'), settings = Depends(get_app_settings)):
@@ -69,9 +73,8 @@ async def get_template_spectrum(sn_type: str = Query('Ia'), age_bin: str = Query
 
         if not os.path.exists(npz_path):
             logger.error(f"Template data file not found: {npz_path}")
-            raise HTTPException(status_code=404, detail="Template data file not found.")
+            raise TemplateNotFoundException(sn_type_decoded, age_bin_decoded)
 
-        # parsing logic from original dash
         data = np.load(npz_path, allow_pickle=True)
         logger.info(f"Loaded npz file, keys: {list(data.keys())}")
 
@@ -83,7 +86,7 @@ async def get_template_spectrum(sn_type: str = Query('Ia'), age_bin: str = Query
 
         if sn_type_decoded not in snTemplates:
             logger.error(f"SN type '{sn_type_decoded}' not found in available types: {list(snTemplates.keys())}")
-            raise HTTPException(status_code=404, detail=f"SN type '{sn_type_decoded}' not found.")
+            raise TemplateNotFoundException(sn_type_decoded)
 
         if not isinstance(snTemplates[sn_type_decoded], dict):
             snTemplates[sn_type_decoded] = dict(snTemplates[sn_type_decoded])
@@ -93,12 +96,12 @@ async def get_template_spectrum(sn_type: str = Query('Ia'), age_bin: str = Query
 
         if age_bin_decoded not in snTemplates[sn_type_decoded].keys():
             logger.error(f"Age bin '{age_bin_decoded}' not found for SN type '{sn_type_decoded}'.")
-            raise HTTPException(status_code=404, detail=f"Age bin '{age_bin_decoded}' not found for SN type '{sn_type_decoded}'.")
+            raise TemplateNotFoundException(sn_type_decoded, age_bin_decoded)
 
         snInfo = snTemplates[sn_type_decoded][age_bin_decoded].get('snInfo', None)
         if not isinstance(snInfo, np.ndarray) or snInfo.shape[0] == 0:
             logger.error(f"No template spectrum available for SN type '{sn_type_decoded}' and age bin '{age_bin_decoded}'.")
-            raise HTTPException(status_code=404, detail=f"No template spectrum available for SN type '{sn_type_decoded}' and age bin '{age_bin_decoded}'.")
+            raise TemplateNotFoundException(sn_type_decoded, age_bin_decoded)
 
         logger.info(f"snInfo shape: {snInfo.shape}, type: {type(snInfo)}")
         logger.info(f"Loading only the first template (index 0) out of {snInfo.shape[0]} available templates")
@@ -119,7 +122,7 @@ async def get_template_spectrum(sn_type: str = Query('Ia'), age_bin: str = Query
 
     except Exception as e:
         logger.error(f"Error loading template spectrum: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Error loading template spectrum: {str(e)}")
+        raise ConfigurationException(f"Error loading template spectrum: {str(e)}")
 
 @router.get("/template-statistics")
 async def get_template_statistics(
@@ -142,7 +145,7 @@ async def get_template_statistics(
 
     except Exception as e:
         logger.error(f"Error fetching template statistics: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch template statistics: {str(e)}")
+        raise ConfigurationException(f"Failed to fetch template statistics: {str(e)}")
 
 @router.post("/process")
 async def process_spectrum(
@@ -153,7 +156,8 @@ async def process_spectrum(
     file_repo = Depends(get_file_spectrum_repo),
     osc_repo = Depends(get_osc_spectrum_repo),
     model_factory = Depends(get_model_factory),
-    settings = Depends(get_app_settings)
+    settings = Depends(get_app_settings),
+    processing_service: SpectrumProcessingService = Depends(get_spectrum_processing_service)
 ):
     """
     Process spectrum for classification with support for:
@@ -186,7 +190,6 @@ async def process_spectrum(
         # Initialize services
         spectrum_service = SpectrumService(file_repo, osc_repo)
         classification_service = ClassificationService(model_factory)
-        processing_service = SpectrumProcessingService()
 
         # Get spectrum data, construct OSC ref if needed
         osc_ref = parsed_params.get('oscRef')
@@ -194,10 +197,9 @@ async def process_spectrum(
             osc_ref = construct_osc_reference(osc_ref)
             logger.info(f"Constructed OSC reference: {osc_ref}")
 
-        spectrum = await _get_spectrum_data(
+        spectrum = await spectrum_service.get_spectrum_data(
             file=file,
-            osc_ref=osc_ref,
-            spectrum_service=spectrum_service
+            osc_ref=osc_ref
         )
 
         # Process spectrum with parameters
@@ -207,25 +209,17 @@ async def process_spectrum(
         )
 
         # Classify spectrum
-        if model_type == "user_uploaded":
-            result = await _classify_with_user_model(
-                processed_spectrum=processed_spectrum,
-                model_id=model_id,
-                settings=settings,
-                params=parsed_params
-            )
-            result_dict = result.copy()
-            result_dict['results'] = sanitize_for_json(result_dict['results'])
-            result_dict['meta'] = sanitize_for_json(result_dict.get('meta', {}))
-        else:
-            result = await classification_service.classify_spectrum(
-                spectrum=processed_spectrum,
-                model_type=model_type
-            )
-            # Classification object, convert to dict and sanitize numpy types
-            result_dict = result.__dict__.copy()
-            result_dict['results'] = sanitize_for_json(result_dict['results'])
-            result_dict['meta'] = sanitize_for_json(result_dict.get('meta', {}))
+        result = await classification_service.classify_spectrum(
+            spectrum=processed_spectrum,
+            model_type=model_type,
+            user_model_id=model_id,
+            params=parsed_params
+        )
+
+        # Convert to dict and sanitize numpy types
+        result_dict = result.__dict__.copy()
+        result_dict['results'] = sanitize_for_json(result_dict['results'])
+        result_dict['meta'] = sanitize_for_json(result_dict.get('meta', {}))
 
         # Return spectrum data and classification results as expected by frontend
         return {
@@ -240,76 +234,10 @@ async def process_spectrum(
 
     except ValidationError as e:
         logger.warning(f"Validation error in /process: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise ValidationException(str(e))
     except Exception as e:
         logger.error(f"Error in /process: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Processing error: {str(e)}")
-
-async def _get_spectrum_data(
-    file: Optional[UploadFile],
-    osc_ref: Optional[str],
-    spectrum_service: SpectrumService
-) -> Spectrum:
-    """Get spectrum data from file or OSC reference."""
-    try:
-        if file:
-            logger.info(f"Processing uploaded file: {file.filename}")
-            # Validate file extension
-            validate_file_extension(file.filename, [".dat", ".lnw", ".txt"])
-            return await spectrum_service.get_spectrum_from_file(file)
-        elif osc_ref:
-            logger.info(f"Processing OSC reference: {osc_ref}")
-            return await spectrum_service.get_spectrum_from_osc(osc_ref)
-        else:
-            raise HTTPException(status_code=400, detail="No spectrum file or OSC reference provided")
-    except Exception as e:
-        logger.error(f"Error getting spectrum data: {e}")
-        raise HTTPException(status_code=400, detail=f"Spectrum data error: {str(e)}")
-
-async def _classify_with_user_model(
-    processed_spectrum: Spectrum,
-    model_id: str,
-    settings,
-    params: Dict[str, Any]
-):
-    """Classify spectrum using user-uploaded model."""
-    try:
-        # Initialize model storage and service
-        model_storage = ModelStorage(settings.user_model_dir)
-        model_service = ModelService(None, model_storage)  # No repo needed for this operation
-
-        # Get model info
-        model_info = model_service.get_model_info(model_id)
-        class_mapping = model_info["class_mapping"]
-        input_shape = model_info["input_shape"]
-
-        # Use the existing UserClassifier through the model factory
-        # This leverages the existing infrastructure
-        from app.infrastructure.ml.model_factory import ModelFactory
-        model_factory = ModelFactory(settings)
-        classifier = model_factory.get_classifier("user_uploaded", model_id)
-
-        # Classify
-        results = await classifier.classify(processed_spectrum)
-
-        # Add RLAP calculation if requested (though user models don't support it)
-        calculate_rlap = params.get('calculateRlap', False)
-        if calculate_rlap:
-            logger.info("RLAP calculation requested but not supported by user-uploaded models")
-            # Set RLAP to None for all matches
-            for match in results.get("best_matches", []):
-                match["rlap"] = None
-
-        return {
-            "spectrum_id": getattr(processed_spectrum, 'id', None),
-            "model_type": "user_uploaded",
-            "user_model_id": model_id,
-            "results": results
-        }
-
-    except Exception as e:
-        logger.error(f"Error classifying with user model: {e}")
-        raise HTTPException(status_code=400, detail=f"User model classification error: {str(e)}")
+        raise SpectrumProcessingException(f"Processing error: {str(e)}")
 
 @router.post("/estimate-redshift")
 async def estimate_redshift(
@@ -351,15 +279,11 @@ async def estimate_redshift(
                     except Exception:
                         continue
         else:
-            raise HTTPException(
-                status_code=400,
-                detail="File upload is required for redshift estimation."
-            )
+            raise ValidationException("File upload is required for redshift estimation.")
 
         if not x or not y:
-            raise HTTPException(
-                status_code=400,
-                detail="No valid spectrum data found in file"
+            raise ValidationException(
+                "No valid spectrum data found in file"
             )
 
         # Estimate redshift using DASH templates only
@@ -370,21 +294,18 @@ async def estimate_redshift(
         logger.info(f"Redshift estimation completed: {result.get('estimated_redshift')}")
         return sanitize_for_json(result)
 
-    except HTTPException:
+    except ValidationException:
         raise
     except Exception as e:
         logger.error(f"Error in redshift estimation: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"Redshift estimation failed: {str(e)}"
+        raise SpectrumProcessingException(
+            f"Redshift estimation failed: {str(e)}"
         )
 
-# --- Line List Endpoints (Analysis Option) ---
-
-line_list_service = LineListService()
-
 @router.get("/line-list")
-async def get_line_list():
+async def get_line_list(
+    line_list_service: LineListService = Depends(get_line_list_service)
+):
     """
     Return the element/ion line list for plotting vertical lines.
     """
@@ -393,15 +314,17 @@ async def get_line_list():
         line_dict = line_list_service.get_line_list()
         logger.info(f"Successfully returned line list with {len(line_dict)} elements/ions")
         return line_dict
-    except FileNotFoundError as e:
+    except LineListNotFoundException as e:
         logger.error(f"Line list file not found: {e}")
-        raise HTTPException(status_code=404, detail="Line list file not found. Please ensure the sneLineList.txt file is available.")
+        raise LineListNotFoundException()
     except Exception as e:
         logger.error(f"Unexpected error in line list endpoint: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error while loading line list: {str(e)}")
+        raise ConfigurationException(f"Internal server error while loading line list: {str(e)}")
 
 @router.get("/line-list/elements")
-async def get_available_elements():
+async def get_available_elements(
+    line_list_service: LineListService = Depends(get_line_list_service)
+):
     """
     Get the list of all available elements/ions in the line list.
     """
@@ -410,32 +333,39 @@ async def get_available_elements():
         return {"elements": elements}
     except Exception as e:
         logger.error(f"Error getting available elements: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error while getting available elements: {str(e)}")
+        raise ConfigurationException(f"Internal server error while getting available elements: {str(e)}")
 
 @router.get("/line-list/element/{element}")
-async def get_element_wavelengths(element: str):
+async def get_element_wavelengths(
+    element: str,
+    line_list_service: LineListService = Depends(get_line_list_service)
+):
     """
     Get wavelengths for a specific element/ion.
     """
     try:
         wavelengths = line_list_service.get_element_wavelengths(element)
         return {"element": element, "wavelengths": wavelengths, "count": len(wavelengths)}
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"Element '{element}' not found in line list")
+    except ElementNotFoundException as e:
+        raise ElementNotFoundException(element)
     except Exception as e:
         logger.error(f"Error getting wavelengths for element {element}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error while getting wavelengths for element {element}: {str(e)}")
+        raise ConfigurationException(f"Internal server error while getting wavelengths for element {element}: {str(e)}")
 
 @router.get("/line-list/filter")
-async def filter_line_list(min_wavelength: float, max_wavelength: float):
+async def filter_line_list(
+    min_wavelength: float,
+    max_wavelength: float,
+    line_list_service: LineListService = Depends(get_line_list_service)
+):
     """
     Filter the line list to only include wavelengths within a specified range.
     """
     try:
         if min_wavelength < 0 or max_wavelength < 0:
-            raise HTTPException(status_code=400, detail="Wavelengths must be positive values")
+            raise ValidationException("Wavelengths must be positive values")
         if min_wavelength > max_wavelength:
-            raise HTTPException(status_code=400, detail="Minimum wavelength must be less than or equal to maximum wavelength")
+            raise ValidationException("Minimum wavelength must be less than or equal to maximum wavelength")
         filtered_dict = line_list_service.filter_wavelengths_by_range(min_wavelength, max_wavelength)
         return {
             "min_wavelength": min_wavelength,
@@ -443,8 +373,8 @@ async def filter_line_list(min_wavelength: float, max_wavelength: float):
             "elements": filtered_dict,
             "count": len(filtered_dict)
         }
-    except HTTPException:
+    except ValidationException:
         raise
     except Exception as e:
         logger.error(f"Error filtering line list: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error while filtering line list: {str(e)}")
+        raise ConfigurationException(f"Internal server error while filtering line list: {str(e)}")

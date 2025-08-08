@@ -1,12 +1,12 @@
 import time
-import logging
 from typing import Dict, Any
 from datetime import datetime
 from collections import defaultdict
 import psutil
 import os
+from app.config.logging import get_logger
 
-logger = logging.getLogger("monitoring")
+logger = get_logger(__name__)
 
 class MetricsCollector:
     """Collect and track application metrics."""

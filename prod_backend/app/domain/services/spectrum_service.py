@@ -2,9 +2,16 @@ from typing import Any, Optional
 from app.domain.models.spectrum import Spectrum
 from app.domain.repositories.spectrum_repository import SpectrumRepository
 from app.config.settings import Settings, get_settings
-import logging
+from app.shared.utils.validators import validate_file_extension
+from app.config.logging import get_logger
+from app.core.exceptions import (
+    SpectrumValidationException,
+    FileReadException,
+    OSCServiceException,
+    ValidationException
+)
 
-logger = logging.getLogger("spectrum_service")
+logger = get_logger(__name__)
 
 class SpectrumService:
     def __init__(self, file_repo: SpectrumRepository, osc_repo: SpectrumRepository, settings: Optional[Settings] = None):
@@ -20,12 +27,12 @@ class SpectrumService:
 
         if not spectrum:
             logger.error("Repository returned None spectrum")
-            raise ValueError("Invalid or unreadable spectrum file.")
+            raise FileReadException(getattr(file, 'filename', 'unknown'), "Invalid or unreadable spectrum file.")
 
         logger.info(f"Spectrum is_valid() result: {spectrum.is_valid()}")
         if not spectrum.is_valid():
             logger.error("Spectrum validation failed")
-            raise ValueError("Invalid or unreadable spectrum file.")
+            raise SpectrumValidationException("Invalid or unreadable spectrum file.")
 
         logger.info("Spectrum validation passed")
         return spectrum
@@ -37,15 +44,49 @@ class SpectrumService:
 
         if not spectrum:
             logger.error(f"Spectrum service: OSC repository returned None spectrum for {osc_ref}")
-            raise ValueError(f"Could not retrieve valid spectrum data from OSC for reference: {osc_ref}. The spectrum may not exist or the OSC API may be unavailable.")
+            raise OSCServiceException(f"Could not retrieve valid spectrum data from OSC for reference: {osc_ref}. The spectrum may not exist or the OSC API may be unavailable.")
 
         logger.info(f"Spectrum service: Spectrum validation result: {spectrum.is_valid()}")
         if not spectrum.is_valid():
             logger.error(f"Spectrum service: Spectrum validation failed for {osc_ref}")
-            raise ValueError(f"Could not retrieve valid spectrum data from OSC for reference: {osc_ref}. The spectrum may not exist or the OSC API may be unavailable.")
+            raise OSCServiceException(f"Could not retrieve valid spectrum data from OSC for reference: {osc_ref}. The spectrum may not exist or the OSC API may be unavailable.")
 
         logger.info(f"Spectrum service: Successfully retrieved and validated OSC spectrum for {osc_ref}")
         return spectrum
+
+    async def get_spectrum_data(self, file: Optional[Any] = None, osc_ref: Optional[str] = None) -> Spectrum:
+        """
+        Get spectrum data from file or OSC reference.
+
+        Args:
+            file: UploadFile object or file-like object
+            osc_ref: OSC reference string
+
+        Returns:
+            Spectrum object
+
+        Raises:
+            ValidationException: If no valid spectrum source is provided
+            SpectrumValidationException: If spectrum is invalid
+            FileReadException: If file cannot be read
+            OSCServiceException: If OSC service fails
+        """
+        try:
+            if file:
+                logger.info(f"Processing uploaded file: {getattr(file, 'filename', 'unknown')}")
+                # Validate file extension
+                validate_file_extension(getattr(file, 'filename', ''), [".dat", ".lnw", ".txt"])
+                return await self.get_spectrum_from_file(file)
+            elif osc_ref:
+                logger.info(f"Processing OSC reference: {osc_ref}")
+                return await self.get_spectrum_from_osc(osc_ref)
+            else:
+                raise ValidationException("No spectrum file or OSC reference provided")
+        except (ValidationException, SpectrumValidationException, FileReadException, OSCServiceException):
+            raise
+        except Exception as e:
+            logger.error(f"Error getting spectrum data: {e}")
+            raise SpectrumValidationException(f"Spectrum data error: {str(e)}")
 
     async def validate_spectrum(self, spectrum: Spectrum) -> bool:
         """

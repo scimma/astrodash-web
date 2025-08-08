@@ -1,30 +1,30 @@
-import logging
 from typing import Any, Dict, Optional
 import numpy as np
 import torch
 from app.shared.utils.helpers import interpolate_to_1024
 from app.infrastructure.ml.classifiers.architectures import spectraTransformerEncoder
+from app.config.logging import get_logger
 import os
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TransformerClassificationService:
     """
     Service to orchestrate Transformer model classification, including preprocessing, inference, and result formatting.
     """
-    
+
     def __init__(
         self,
         model_path: str,
         logger: Optional[logging.Logger] = None
     ):
         self.model_path = model_path
-        self.logger = logger or logging.getLogger("transformer_classification_service")
+        self.logger = logger or get_logger(__name__)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = None
         self._load_model()
-        
+
         # Label mapping for 5 classes
         self.label_mapping = {'Ia': 0, 'IIn': 1, 'SLSNe-I': 2, 'II': 3, 'Ib/c': 4}
         self.idx_to_label = {v: k for k, v in self.label_mapping.items()}
@@ -36,7 +36,7 @@ class TransformerClassificationService:
             self.logger.warning(f"Transformer model file not found at {self.model_path}. Model will not be available.")
             self.model = None
             return
-            
+
         try:
             # Model hyperparameters - adjusted to match the saved model
             bottleneck_length = 1  # Changed from 8 to 1 based on saved model
@@ -78,17 +78,17 @@ class TransformerClassificationService:
     ) -> Dict[str, Any]:
         """
         Classify a spectrum using the Transformer model.
-        
+
         Args:
             processed_data: Dictionary containing 'x' (wavelength), 'y' (flux), 'redshift'
-            
+
         Returns:
             Dictionary with classification results
         """
         if self.model is None:
             self.logger.error("Transformer model is not loaded. Returning empty result.")
             return {}
-            
+
         try:
             # Extract and preprocess data
             wavelength_data = interpolate_to_1024(processed_data['x'])  # wavelength
@@ -133,7 +133,7 @@ class TransformerClassificationService:
                 'best_match': best_match,
                 'reliable_matches': best_match.get('reliable', False) if best_match else False
             }
-            
+
         except Exception as e:
             self.logger.error(f"Error during transformer classification: {e}")
             return {}
@@ -141,7 +141,7 @@ class TransformerClassificationService:
     def load_model_from_state_dict(self, state_dict, model_config: Dict[str, Any]):
         """
         Load a model from a state dict with the specified configuration.
-        
+
         Args:
             state_dict: PyTorch state dict containing model weights
             model_config: Dictionary containing model hyperparameters
@@ -151,10 +151,10 @@ class TransformerClassificationService:
             model = spectraTransformerEncoder(**model_config).to(self.device)
             model.load_state_dict(state_dict)
             model.eval()
-            
+
             self.model = model
             self.logger.info(f"Transformer model loaded from state dict with {sum(p.numel() for p in model.parameters())} parameters")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to load transformer model from state dict: {e}")
             self.model = None
@@ -162,9 +162,9 @@ class TransformerClassificationService:
     def update_model_from_state_dict(self, state_dict, model_config: Dict[str, Any]):
         """
         Update the current model with a new state dict.
-        
+
         Args:
             state_dict: PyTorch state dict containing model weights
             model_config: Dictionary containing model hyperparameters
         """
-        self.load_model_from_state_dict(state_dict, model_config) 
+        self.load_model_from_state_dict(state_dict, model_config)

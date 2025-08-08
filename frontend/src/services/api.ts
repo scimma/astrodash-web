@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -61,6 +61,41 @@ export interface LineListResponse {
   [element: string]: number[];
 }
 
+// Enhanced error interface for custom exceptions
+export interface ApiError {
+  detail: string;
+  status_code?: number;
+  message?: string;
+}
+
+// Error handling utility
+const handleApiError = (error: AxiosError<ApiError>): never => {
+  console.error('API Error:', {
+    status: error.response?.status,
+    statusText: error.response?.statusText,
+    data: error.response?.data,
+    message: error.message
+  });
+
+  // Extract error message from response
+  let errorMessage = 'An unexpected error occurred.';
+
+  if (error.response?.data?.detail) {
+    errorMessage = error.response.data.detail;
+  } else if (error.response?.data?.message) {
+    errorMessage = error.response.data.message;
+  } else if (error.message) {
+    errorMessage = error.message;
+  }
+
+  // Create a custom error with the extracted message
+  const customError = new Error(errorMessage);
+  (customError as any).status = error.response?.status;
+  (customError as any).response = error.response;
+
+  throw customError;
+};
+
 class Api {
   async processSpectrum(params: ProcessParams): Promise<ProcessResponse> {
     console.log('API: Making request to /api/v1/process with params:', params);
@@ -103,18 +138,19 @@ class Api {
         },
       });
       console.log('API: Received response:', response.data);
-    return response.data;
+      return response.data;
     } catch (error) {
-      console.error('API: Error making request:', error);
-      throw error;
+      handleApiError(error as AxiosError<ApiError>);
     }
   }
 
-
-
   async getAnalysisOptions(): Promise<AnalysisOptionsResponse> {
-    const response = await axios.get(`${API_BASE_URL}/api/v1/analysis-options`);
-    return response.data;
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/v1/analysis-options`);
+      return response.data;
+    } catch (error) {
+      handleApiError(error as AxiosError<ApiError>);
+    }
   }
 
   async getTemplateSpectrum(snType: string, age: string): Promise<TemplateSpectrumResponse> {
@@ -135,13 +171,17 @@ class Api {
         data: error.response?.data,
         message: error.message
       });
-      throw error;
+      handleApiError(error as AxiosError<ApiError>);
     }
   }
 
   async getLineList(): Promise<LineListResponse> {
-    const response = await axios.get(`${API_BASE_URL}/api/v1/line-list`);
-    return response.data;
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/v1/line-list`);
+      return response.data;
+    } catch (error) {
+      handleApiError(error as AxiosError<ApiError>);
+    }
   }
 
   async batchProcess({ zipFile, params }: { zipFile: File; params: any }): Promise<any> {
@@ -168,8 +208,7 @@ class Api {
       });
       return response.data;
     } catch (error) {
-      console.error('API: Error making batch-process request:', error);
-      throw error;
+      handleApiError(error as AxiosError<ApiError>);
     }
   }
 
@@ -201,8 +240,7 @@ class Api {
       });
       return response.data;
     } catch (error) {
-      console.error('API: Error making batch-process-multiple request:', error);
-      throw error;
+      handleApiError(error as AxiosError<ApiError>);
     }
   }
 

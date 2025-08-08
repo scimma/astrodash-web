@@ -4,10 +4,11 @@ import torch
 import numpy as np
 from typing import Any, Optional
 from app.infrastructure.ml.classifiers.base import BaseClassifier
-import logging
 from app.config.settings import get_settings, Settings
+from app.config.logging import get_logger
+from app.core.exceptions import FileNotFoundException
 
-logger = logging.getLogger("user_classifier")
+logger = get_logger(__name__)
 
 class UserClassifier(BaseClassifier):
     def __init__(self, user_model_id: str, config: Settings = None):
@@ -28,13 +29,13 @@ class UserClassifier(BaseClassifier):
     def _load_model_and_metadata(self):
         if not os.path.exists(self.model_path):
             logger.error(f"User model file not found: {self.model_path}")
-            raise FileNotFoundError(f"User model file not found: {self.model_path}")
+            raise FileNotFoundException(self.model_path)
         if not os.path.exists(self.mapping_path):
             logger.error(f"User model class mapping not found: {self.mapping_path}")
-            raise FileNotFoundError(f"User model class mapping not found: {self.mapping_path}")
+            raise FileNotFoundException(self.mapping_path)
         if not os.path.exists(self.input_shape_path):
             logger.error(f"User model input shape not found: {self.input_shape_path}")
-            raise FileNotFoundError(f"User model input shape not found: {self.input_shape_path}")
+            raise FileNotFoundException(self.input_shape_path)
         self.model = torch.jit.load(self.model_path, map_location='cpu')
         self.model.eval()
         with open(self.mapping_path, 'r') as f:

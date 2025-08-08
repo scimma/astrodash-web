@@ -1,14 +1,13 @@
 from fastapi import FastAPI
 from app.api.v1.router import router as api_v1_router
-from app.config.logging import init_logging
+from app.config.logging import init_logging, get_logger
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import setup_middleware
 from app.core.monitoring import get_health_status
-import logging
 
 # Initialize logging
 init_logging()
-logger = logging.getLogger("main")
+logger = get_logger(__name__)
 
 # Create FastAPI app
 app = FastAPI(

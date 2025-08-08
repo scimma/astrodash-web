@@ -1,9 +1,10 @@
 import os
-import logging
 from typing import Dict, List, Optional
 from app.config.settings import get_settings
+from app.config.logging import get_logger
+from app.core.exceptions import LineListNotFoundException, ElementNotFoundException
 
-logger = logging.getLogger("line_list_service")
+logger = get_logger(__name__)
 
 class LineListService:
     """
@@ -23,7 +24,7 @@ class LineListService:
             return self._cache
         if not os.path.exists(self.line_list_path):
             logger.error(f"Line list file not found: {self.line_list_path}")
-            raise FileNotFoundError(f"Line list file not found: {self.line_list_path}")
+            raise LineListNotFoundException(self.line_list_path)
         line_dict = {}
         with open(self.line_list_path, 'r') as f:
             for line_num, line in enumerate(f, 1):
@@ -57,7 +58,7 @@ class LineListService:
     def get_element_wavelengths(self, element: str) -> List[float]:
         line_list = self.get_line_list()
         if element not in line_list:
-            raise KeyError(f"Element '{element}' not found in line list")
+            raise ElementNotFoundException(element)
         return line_list[element]
 
     def filter_wavelengths_by_range(self, min_wavelength: float, max_wavelength: float) -> Dict[str, List[float]]:

@@ -1,8 +1,12 @@
-from typing import Optional
+from typing import Optional, Dict, Any
 from app.domain.models.spectrum import Spectrum
 from app.domain.models.classification import Classification
 from app.infrastructure.ml.model_factory import ModelFactory
 from app.config.settings import Settings, get_settings
+from app.config.logging import get_logger
+from app.core.exceptions import ClassificationException
+
+logger = get_logger(__name__)
 
 class ClassificationService:
     def __init__(self, model_factory: ModelFactory, settings: Optional[Settings] = None):
@@ -14,12 +18,44 @@ class ClassificationService:
         self,
         spectrum: Spectrum,
         model_type: str,
-        user_model_id: Optional[str] = None
+        user_model_id: Optional[str] = None,
+        params: Optional[Dict[str, Any]] = None
     ) -> Classification:
+        """
+        Classify spectrum using the specified model type or user-uploaded model.
+
+        Args:
+            spectrum: Spectrum to classify
+            model_type: Type of model ('dash', 'transformer', 'user_uploaded')
+            user_model_id: ID of user-uploaded model (if applicable)
+            params: Additional parameters for classification (e.g., calculateRlap)
+
+        Returns:
+            Classification object with results
+
+        Raises:
+            ClassificationException: If classification fails or returns no results
+        """
+        # Determine the actual model type for user-uploaded models
+        if user_model_id:
+            model_type = "user_uploaded"
+            logger.info(f"Using user-uploaded model: {user_model_id}")
+
         classifier = self.model_factory.get_classifier(model_type, user_model_id)
         results = await classifier.classify(spectrum)
+
         if not results:
-            raise ValueError("Classification failed or returned no results.")
+            raise ClassificationException("Classification failed or returned no results.")
+
+        # Handle RLAP calculation for user-uploaded models
+        if model_type == "user_uploaded" and params:
+            calculate_rlap = params.get('calculateRlap', False)
+            if calculate_rlap:
+                logger.info("RLAP calculation requested but not supported by user-uploaded models")
+                # Set RLAP to None for all matches
+                for match in results.get("best_matches", []):
+                    match["rlap"] = None
+
         return Classification(
             spectrum_id=getattr(spectrum, 'id', None),
             model_type=model_type,

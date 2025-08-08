@@ -1,10 +1,10 @@
 from typing import Dict, List, Any, Optional
 from app.domain.repositories.spectrum_repository import SpectrumTemplateInterface
 from app.shared.utils.validators import ValidationError
+from app.config.logging import get_logger
 import numpy as np
-import logging
 
-logger = logging.getLogger("template_analysis_service")
+logger = get_logger(__name__)
 
 class TemplateAnalysisService:
     """

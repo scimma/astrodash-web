@@ -5,14 +5,14 @@ for the production backend.
 
 import os
 import numpy as np
-import logging
 from scipy.signal import argrelmax
 from app.infrastructure.ml.dash_utils import get_training_parameters
 from app.shared.utils.helpers import get_redshift_axis
 from app.shared.utils.redshift import get_median_redshift
 from app.config.settings import get_settings
+from app.config.logging import get_logger
 
-logger = logging.getLogger("rlap_calculator")
+logger = get_logger(__name__)
 
 class RlapCalculator:
     def __init__(self, inputFlux, templateFluxes, templateNames, wave, inputMinMaxIndex, templateMinMaxIndexes):

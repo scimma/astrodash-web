@@ -8,13 +8,14 @@ import json
 from collections import OrderedDict
 from urllib.request import urlopen
 from urllib.error import URLError
+from app.config.logging import get_logger
 # NOTE: You will need to adapt the following import to your new architecture
 # from .astrodash_backend import (
 #     get_training_parameters, AgeBinning, BestTypesListSingleRedshift, LoadInputSpectra,
 #     classification_split, combined_prob, normalise_spectrum
 # )
-import logging
-logger = logging.getLogger("spectrum_processor")
+
+logger = get_logger(__name__)
 
 class SpectrumProcessor:
     def __init__(self):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
+from fastapi import APIRouter, UploadFile, File, Form, Depends
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -8,9 +8,16 @@ from app.shared.schemas.user_model import UserModelSchema, ModelUploadResponse, 
 from app.domain.models.user_model import UserModel
 from app.infrastructure.storage.model_storage import ModelStorage
 from app.shared.utils.validators import ValidationError
-import logging
+from app.config.logging import get_logger
+from app.core.exceptions import (
+    ValidationException,
+    ModelNotFoundException,
+    ModelConflictException,
+    ModelValidationException,
+    ConfigurationException
+)
 
-logger = logging.getLogger("models_api")
+logger = get_logger(__name__)
 router = APIRouter()
 
 @router.post("/upload-model", response_model=ModelUploadResponse)
@@ -72,34 +79,10 @@ async def upload_model(
 
     except ValidationError as e:
         logger.warning(f"Model upload validation failed: {e}")
-        return JSONResponse(
-            status_code=400,
-            content={
-                "status": "error",
-                "message": str(e),
-                "model_id": None,
-                "model_filename": None,
-                "class_mapping": None,
-                "output_shape": None,
-                "input_shape": None,
-                "model_info": None
-            }
-        )
+        raise ModelValidationException(str(e))
     except Exception as e:
         logger.error(f"Model upload failed: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "error",
-                "message": f"Internal server error: {str(e)}",
-                "model_id": None,
-                "model_filename": None,
-                "class_mapping": None,
-                "output_shape": None,
-                "input_shape": None,
-                "model_info": None
-            }
-        )
+        raise ConfigurationException(f"Internal server error: {str(e)}")
 
 @router.get("/models/health")
 async def models_health_check():
@@ -186,10 +169,10 @@ async def get_model_info(
 
     except ValidationError as e:
         logger.warning(f"Failed to get model info for {model_id}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise ModelValidationException(str(e))
     except Exception as e:
         logger.error(f"Failed to get model info for {model_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get model info: {str(e)}")
+        raise ConfigurationException(f"Failed to get model info: {str(e)}")
 
 @router.delete("/models/{model_id}")
 async def delete_model(
@@ -216,10 +199,10 @@ async def delete_model(
 
     except ValidationError as e:
         logger.warning(f"Failed to delete model {model_id}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise ModelValidationException(str(e))
     except Exception as e:
         logger.error(f"Failed to delete model {model_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete model: {str(e)}")
+        raise ConfigurationException(f"Failed to delete model: {str(e)}")
 
 @router.put("/models/{model_id}")
 async def update_model(
@@ -244,7 +227,7 @@ async def update_model(
             updates["description"] = description
 
         if not updates:
-            raise HTTPException(status_code=400, detail="No updates provided")
+            raise ModelValidationException("No updates provided")
 
         updated_model = await service.update_model_metadata(model_id, updates)
 
@@ -258,10 +241,10 @@ async def update_model(
 
     except ValidationError as e:
         logger.warning(f"Failed to update model {model_id}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise ModelValidationException(str(e))
     except Exception as e:
         logger.error(f"Failed to update model {model_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to update model: {str(e)}")
+        raise ConfigurationException(f"Failed to update model: {str(e)}")
 
 @router.get("/models/owner/{owner}", response_model=List[UserModelSchema])
 async def list_models_by_owner(
@@ -277,7 +260,7 @@ async def list_models_by_owner(
         return [UserModelSchema(**m.__dict__) for m in models]
     except ValidationError as e:
         logger.warning(f"Failed to list models for owner {owner}: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise ModelValidationException(str(e))
     except Exception as e:
         logger.error(f"Failed to list models for owner {owner}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to list models: {str(e)}")
+        raise ConfigurationException(f"Failed to list models: {str(e)}")

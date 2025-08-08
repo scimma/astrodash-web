@@ -1,12 +1,12 @@
 import os
 import numpy as np
-import logging
 from typing import Any, Dict, List, Optional, Tuple
 from app.shared.utils.redshift import get_median_redshift
 from app.shared.utils.helpers import prepare_log_wavelength_and_templates, get_nonzero_minmax, normalize_age_bin
 from app.config.settings import get_settings
+from app.config.logging import get_logger
 
-logger = logging.getLogger("redshift_service")
+logger = get_logger(__name__)
 
 class RedshiftService:
     """
