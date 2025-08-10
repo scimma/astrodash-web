@@ -3,22 +3,23 @@ from app.domain.models.user_model import UserModel
 from app.domain.repositories.model_repository import ModelRepository
 from app.infrastructure.ml.model_loader import ModelLoader, ModelValidator
 from app.infrastructure.storage.model_storage import ModelStorage
-from app.shared.utils.validators import validate_model_upload_request, ValidationError
+from app.shared.utils.validators import validate_model_upload_request, ValidationError, validate_user_model_basic
 from app.core.exceptions import (
     ModelNotFoundException,
     ModelValidationException,
     ModelConflictException,
-    ConfigurationException
+    ConfigurationException,
+    ValidationException
 )
 from app.config.logging import get_logger
 import uuid
+import asyncio
 
 logger = get_logger(__name__)
 
 class ModelService:
     """
     Service layer for user-uploaded model operations.
-    Orchestrates business logic and repository access for user models.
     """
 
     def __init__(self, model_repo: ModelRepository, model_storage: ModelStorage = None):
@@ -38,7 +39,7 @@ class ModelService:
         owner: str = None
     ) -> Tuple[UserModel, Dict[str, Any]]:
         """
-        Upload and validate a new model with comprehensive validation.
+        Upload and validate a new model.
 
         Args:
             model_content: Raw model file content
@@ -65,13 +66,10 @@ class ModelService:
             # Generate unique model ID
             model_id = str(uuid.uuid4())
 
-            # Prepare input shapes for validation
-            # input_shape can be either a single shape [1, 1024] or multiple shapes [[1, 1024], [1, 1024], [1, 1]]
+            # Wrap single input shape
             if input_shape and isinstance(input_shape[0], list):
-                # Multiple input shapes already in correct format
                 input_shapes = input_shape
             else:
-                # Single input shape, wrap in list
                 input_shapes = [input_shape]
 
             # Save model files to storage
@@ -80,7 +78,7 @@ class ModelService:
                     model_id=model_id,
                     model_content=model_content,
                     class_mapping=class_mapping,
-                    input_shape=input_shape,  # Keep original for storage
+                    input_shape=input_shape,
                     metadata={"description": description, "owner": owner}
                 )
 
@@ -97,33 +95,31 @@ class ModelService:
                     "model": f"temp_{model_id}.pth",
                     "class_mapping": f"temp_{model_id}.classes.json",
                     "input_shape": f"temp_{model_id}.input_shape.json",
-                    "metadata": f"temp_{model_id}.metadata.json"
+                    "metadata": f"temp_{model_id}.meta.json"
                 }
 
             # Create UserModel instance
             user_model = UserModel(
                 id=model_id,
-                name=name if name else filename,  # Use provided name or default to filename
+                name=name,
                 description=description,
                 owner=owner,
                 model_path=file_paths["model"],
                 class_mapping_path=file_paths["class_mapping"],
-                input_shape_path=file_paths["input_shape"],
-                meta=model_info
+                input_shape_path=file_paths["input_shape"]
             )
 
             # Save to repository
-            saved_model = await self.model_repo.save(user_model)
+            saved_model = await asyncio.to_thread(self.model_repo.save, user_model)
 
-            logger.info(f"Model uploaded successfully: {model_id}")
             return saved_model, model_info
 
         except Exception as e:
-            logger.error(f"Model upload failed: {e}")
-            # Cleanup on failure - only if model_id was created
-            if self.model_storage and 'model_id' in locals():
+            logger.error(f"Error uploading model: {e}", exc_info=True)
+            # Clean up any saved files on error
+            if 'model_id' in locals() and self.model_storage:
                 self.model_storage.cleanup_model_files(model_id)
-            raise e
+            raise
 
     def _validate_saved_model(
         self,
@@ -224,23 +220,25 @@ class ModelService:
         Save a model to the repository with business rule validation.
         """
         # Validate model before saving
-        if not model.is_valid():
-            raise ModelValidationException("Model is not valid")
+        try:
+            validate_user_model_basic(model.model_path, model.class_mapping_path, model.input_shape_path)
+        except Exception as e:
+            raise ModelValidationException(f"Model validation failed: {str(e)}")
 
         # Check for duplicate names (if name is provided)
         if model.name:
-            existing_models = await self.model_repo.get_by_owner(model.owner or "")
+            existing_models = await asyncio.to_thread(self.model_repo.get_by_owner, model.owner or "")
             for existing in existing_models:
                 if existing.name == model.name:
                     raise ModelConflictException(f"Model with name '{model.name}' already exists")
 
-        return await self.model_repo.save(model)
+        return await asyncio.to_thread(self.model_repo.save, model)
 
     async def get_model(self, model_id: str) -> UserModel:
         """
         Get a model by ID with additional validation.
         """
-        model = await self.model_repo.get_by_id(model_id)
+        model = await asyncio.to_thread(self.model_repo.get_by_id, model_id)
         if not model:
             raise ModelNotFoundException(model_id)
 
@@ -255,13 +253,13 @@ class ModelService:
         """
         List all models with optional filtering.
         """
-        return await self.model_repo.list_all()
+        return await asyncio.to_thread(self.model_repo.list_all)
 
     async def delete_model(self, model_id: str) -> None:
         """
         Delete a model with cleanup.
         """
-        model = await self.model_repo.get_by_id(model_id)
+        model = await asyncio.to_thread(self.model_repo.get_by_id, model_id)
         if not model:
             raise ModelNotFoundException(model_id)
 
@@ -270,7 +268,7 @@ class ModelService:
             self.model_storage.cleanup_model_files(model_id)
 
         # Delete from repository
-        await self.model_repo.delete(model_id)
+        await asyncio.to_thread(self.model_repo.delete, model_id)
         logger.info(f"Model {model_id} deleted successfully")
 
     async def list_models_by_owner(self, owner: str) -> List[UserModel]:
@@ -280,7 +278,7 @@ class ModelService:
         if not owner:
             raise ValidationException("Owner cannot be empty")
 
-        return await self.model_repo.get_by_owner(owner)
+        return await asyncio.to_thread(self.model_repo.get_by_owner, owner)
 
     async def update_model_metadata(self, model_id: str, updates: Dict[str, Any]) -> UserModel:
         """
@@ -304,7 +302,7 @@ class ModelService:
             self.model_storage.update_metadata(model_id, updates)
 
         # Save to repository
-        return await self.model_repo.save(model)
+        return await asyncio.to_thread(self.model_repo.save, model)
 
     def get_model_info(self, model_id: str) -> Dict[str, Any]:
         """

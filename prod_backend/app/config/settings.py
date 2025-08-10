@@ -40,17 +40,18 @@ class Settings(BaseSettings):
     db_url: Optional[AnyUrl] = Field(None, env="DATABASE_URL")
     db_echo: bool = Field(False, env="DB_ECHO")
 
-    # Storage
-    storage_dir: str = Field("storage", env="STORAGE_DIR")
-    user_model_dir: str = Field("app/astrodash_models/user_uploaded", env="USER_MODEL_DIR")
+    # Data Storage (External to application code)
+    data_dir: str = Field("/data", env="DATA_DIR")
 
-    # ML Model Paths
-    dash_model_path: str = Field("app/astrodash_models/zeroZ/pytorch_model.pth", env="DASH_MODEL_PATH")
-    transformer_model_path: str = Field("app/astrodash_models/yuqing_models/TF_wiserep_v6.pt", env="TRANSFORMER_MODEL_PATH")
+    # ML Model Paths (External data directory)
+    user_model_dir: str = Field("/data/user_models", env="USER_MODEL_DIR")
+    dash_model_path: str = Field("/data/pre_trained_models/dash/pytorch_model.pth", env="DASH_MODEL_PATH")
+    dash_training_params_path: str = Field("/data/pre_trained_models/dash/training_params.pickle", env="DASH_TRAINING_PARAMS_PATH")
+    transformer_model_path: str = Field("/data/pre_trained_models/transformer/TF_wiserep_v6.pt", env="TRANSFORMER_MODEL_PATH")
 
-    # Template and Line List Paths
-    template_path: str = Field("app/astrodash_models/sn_and_host_templates.npz", env="TEMPLATE_PATH")
-    line_list_path: str = Field("app/astrodash_models/sneLineList.txt", env="LINE_LIST_PATH")
+    # Template and Line List Paths (External data directory)
+    template_path: str = Field("/data/pre_trained_models/templates/sn_and_host_templates.npz", env="TEMPLATE_PATH")
+    line_list_path: str = Field("/data/pre_trained_models/templates/sneLineList.txt", env="LINE_LIST_PATH")
 
     # ML Configuration Parameters
     # DASH model parameters
@@ -63,6 +64,18 @@ class Settings(BaseSettings):
         {'Ia': 0, 'IIn': 1, 'SLSNe-I': 2, 'II': 3, 'Ib/c': 4},
         env="LABEL_MAPPING"
     )
+
+    # Transformer architecture parameters
+    transformer_bottleneck_length: int = Field(1, env="TRANSFORMER_BOTTLENECK_LENGTH")
+    transformer_model_dim: int = Field(128, env="TRANSFORMER_MODEL_DIM")
+    transformer_num_heads: int = Field(4, env="TRANSFORMER_NUM_HEADS")
+    transformer_num_layers: int = Field(6, env="TRANSFORMER_NUM_LAYERS")
+    transformer_ff_dim: int = Field(256, env="TRANSFORMER_FF_DIM")
+    transformer_dropout: float = Field(0.1, env="TRANSFORMER_DROPOUT")
+    transformer_selfattn: bool = Field(False, env="TRANSFORMER_SELFATTN")
+
+    # User model parameters
+    user_model_reliability_threshold: float = Field(0.5, env="USER_MODEL_RELIABILITY_THRESHOLD")
 
     # Logging
     log_dir: str = Field("logs", env="LOG_DIR")

@@ -10,6 +10,7 @@ if APP_PATH not in sys.path:
 from domain.models.spectrum import Spectrum
 from domain.models.classification import Classification
 from domain.services.classification_service import ClassificationService
+from core.exceptions import ClassificationException
 
 @pytest.fixture
 def mock_model_factory():
@@ -57,5 +58,5 @@ async def test_classify_spectrum_failure(mock_model_factory, mock_classifier, sp
     mock_classifier.classify = AsyncMock(return_value={})  # Return empty dict instead of None
     mock_model_factory.get_classifier.return_value = mock_classifier
     service = ClassificationService(mock_model_factory)
-    with pytest.raises(ValueError):
+    with pytest.raises(ClassificationException):
         await service.classify_spectrum(spectrum, model_type="dash")

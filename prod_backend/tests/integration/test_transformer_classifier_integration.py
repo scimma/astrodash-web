@@ -20,7 +20,7 @@ DAT_FILE = os.path.join(TEST_FILES_DIR, 'ptf10hgi.p67.dat')
 @pytest.mark.asyncio
 async def test_transformer_classifier_with_real_file():
     config = Mock()
-    config.transformer_model_path = "/home/jesusca/code_personal/astrodash-web/backend/astrodash_models/yuqing_models/TF_wiserep_v6.pt"
+    config.transformer_model_path = "/data/pre_trained_models/transformer/TF_wiserep_v6.pt"
     config.nw = 1024
     config.w0 = 3500.0
     config.w1 = 10000.0

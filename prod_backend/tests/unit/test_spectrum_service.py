@@ -69,7 +69,22 @@ async def test_get_spectrum_from_osc_invalid(file_repo, osc_repo, invalid_spectr
         await service.get_spectrum_from_osc(osc_ref=OSC_REF)
 
 @pytest.mark.asyncio
-async def test_validate_spectrum(file_repo, osc_repo, valid_spectrum, invalid_spectrum):
-    service = SpectrumService(file_repo, osc_repo)
-    assert await service.validate_spectrum(valid_spectrum) is True
-    assert await service.validate_spectrum(invalid_spectrum) is False
+async def test_validate_spectrum(valid_spectrum, invalid_spectrum):
+    """Test spectrum validation using centralized validator function."""
+    from app.shared.utils.validators import validate_spectrum
+
+    # Valid spectrum should not raise exception
+    try:
+        validate_spectrum(valid_spectrum.x, valid_spectrum.y, valid_spectrum.redshift)
+        validation_passed = True
+    except Exception:
+        validation_passed = False
+    assert validation_passed is True
+
+    # Invalid spectrum should raise exception
+    try:
+        validate_spectrum(invalid_spectrum.x, invalid_spectrum.y, invalid_spectrum.redshift)
+        validation_passed = True
+    except Exception:
+        validation_passed = False
+    assert validation_passed is False

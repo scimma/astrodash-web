@@ -31,17 +31,10 @@ def prepare_log_wavelength_and_templates(
 
     # Load templates
     if template_dir is None:
-        # Use the same path resolution logic as get_training_parameters
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        # Go up from shared/utils to find the backend/astrodash_models directory
-        # Current path: prod_backend/app/shared/utils/
-        # Target path: backend/astrodash_models/
-        backend_dir = os.path.join(current_dir, '..', '..', '..', '..', 'backend')
-        template_dir = os.path.join(backend_dir, 'astrodash_models')
-
-        # Verify the directory exists
-        if not os.path.exists(template_dir):
-            raise FileNotFoundError(f"Could not find astrodash_models directory at {template_dir}")
+        # Get template path from settings
+        from app.config.settings import get_settings
+        settings = get_settings()
+        template_dir = os.path.dirname(settings.template_path)
 
     template_path = os.path.join(template_dir, template_filename)
     data = np.load(template_path, allow_pickle=True)

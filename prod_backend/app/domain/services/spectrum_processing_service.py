@@ -2,6 +2,7 @@ from typing import Dict, Any, Optional, Tuple
 from app.domain.models.spectrum import Spectrum
 from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor, TransformerSpectrumProcessor
 from app.shared.utils.helpers import interpolate_to_1024, normalise_spectrum
+from app.config.settings import Settings, get_settings
 from app.config.logging import get_logger
 from app.core.exceptions import SpectrumProcessingException
 import numpy as np
@@ -14,10 +15,17 @@ class SpectrumProcessingService:
     Handles smoothing, redshift application, wavelength filtering, and preprocessing.
     """
 
-    def __init__(self):
-        self.dash_processor = DashSpectrumProcessor(w0=3500.0, w1=10000.0, nw=1024)
-        self.transformer_processor = TransformerSpectrumProcessor(target_length=1024)
-        logger.info("SpectrumProcessingService initialized")
+    def __init__(self, settings: Optional[Settings] = None):
+        self.settings = settings or get_settings()
+        self.dash_processor = DashSpectrumProcessor(
+            w0=self.settings.w0,
+            w1=self.settings.w1,
+            nw=self.settings.nw
+        )
+        self.transformer_processor = TransformerSpectrumProcessor(
+            target_length=self.settings.nw
+        )
+        logger.info("SpectrumProcessingService initialized with settings")
 
     async def process_spectrum_with_params(
         self,
@@ -245,29 +253,3 @@ class SpectrumProcessingService:
         except Exception as e:
             logger.error(f"Error preparing spectrum for model {model_type}: {e}")
             raise ValueError(f"Model preparation failed: {str(e)}")
-
-    def calculate_rlap_score(self, flux: np.ndarray) -> Optional[float]:
-        """
-        Calculate RLAP (Redshift-Luminosity-Age Parameter) score.
-
-        Args:
-            flux: Processed flux array
-
-        Returns:
-            RLAP score or None if calculation fails
-        """
-        try:
-            # Simple RLAP calculation based on signal-to-noise ratio
-            # This is a simplified version - the full RLAP calculation is more complex
-            signal = np.mean(flux)
-            noise = np.std(flux)
-
-            if noise == 0:
-                return None
-
-            rlap = signal / noise
-            return float(rlap)
-
-        except Exception as e:
-            logger.warning(f"RLAP calculation failed: {e}")
-            return None

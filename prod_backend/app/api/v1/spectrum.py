@@ -1,31 +1,33 @@
-from fastapi import APIRouter, UploadFile, File, Form, Depends, Query
-from typing import Optional, Dict, Any, List
-from app.shared.schemas.spectrum import SpectrumSchema
-from app.shared.schemas.classification import ClassificationSchema
-from app.core.dependencies import get_sqlalchemy_spectrum_repository, get_osc_spectrum_repo, get_model_factory, get_app_settings, get_template_analysis_service, get_file_spectrum_repo, get_line_list_service, get_spectrum_processing_service
-from app.domain.services.spectrum_service import SpectrumService
-from app.domain.services.classification_service import ClassificationService
-from app.domain.services.spectrum_processing_service import SpectrumProcessingService
-from app.domain.services.template_analysis_service import TemplateAnalysisService
-from app.domain.repositories.spectrum_repository import create_spectrum_template_handler
+from fastapi import APIRouter, Depends, File, UploadFile, Form, Query, HTTPException
+from typing import List, Optional, Dict, Any
+from app.core.dependencies import get_sqlalchemy_spectrum_repository, get_osc_spectrum_repo, get_model_factory, get_app_settings, get_template_analysis_service, get_file_spectrum_repo, get_line_list_service, get_spectrum_processing_service, get_classification_service, get_redshift_service, get_spectrum_service
 from app.domain.models.spectrum import Spectrum
-from app.shared.utils.validators import ValidationError
+from app.domain.services.spectrum_service import SpectrumService
+from app.domain.services.template_analysis_service import TemplateAnalysisService
+from app.domain.services.line_list_service import LineListService
+from app.domain.services.spectrum_processing_service import SpectrumProcessingService
+from app.domain.services.classification_service import ClassificationService
 from app.domain.services.redshift_service import RedshiftService
-from app.shared.utils.helpers import prepare_log_wavelength_and_templates, get_nonzero_minmax, sanitize_for_json, construct_osc_reference
-from app.config.logging import get_logger
+from app.infrastructure.ml.templates import create_spectrum_template_handler
+from app.shared.schemas.spectrum import SpectrumSchema, SpectrumUploadResponse, SpectrumInfoResponse
 from app.core.exceptions import (
+    ValidationException,
+    SpectrumValidationException,
+    SpectrumProcessingException,
+    FileReadException,
+    OSCServiceException,
+    ConfigurationException,
     TemplateNotFoundException,
     LineListNotFoundException,
-    ElementNotFoundException,
-    ValidationException,
-    SpectrumProcessingException,
-    ConfigurationException
+    ElementNotFoundException
 )
-import json
-import io
+from app.shared.utils.helpers import sanitize_for_json, construct_osc_reference
+from app.shared.utils.validators import ValidationError
+from app.config.logging import get_logger
 import numpy as np
 import os
-from app.domain.services.line_list_service import LineListService
+import json
+import io
 
 
 logger = get_logger(__name__)
@@ -152,12 +154,9 @@ async def process_spectrum(
     params: str = Form('{}'),
     file: Optional[UploadFile] = File(None),
     model_id: Optional[str] = Form(None),
-    db_repo = Depends(get_sqlalchemy_spectrum_repository),
-    file_repo = Depends(get_file_spectrum_repo),
-    osc_repo = Depends(get_osc_spectrum_repo),
-    model_factory = Depends(get_model_factory),
-    settings = Depends(get_app_settings),
-    processing_service: SpectrumProcessingService = Depends(get_spectrum_processing_service)
+    spectrum_service: SpectrumService = Depends(get_spectrum_service),
+    processing_service: SpectrumProcessingService = Depends(get_spectrum_processing_service),
+    classification_service: ClassificationService = Depends(get_classification_service)
 ):
     """
     Process spectrum for classification with support for:
@@ -187,10 +186,6 @@ async def process_spectrum(
                 model_type = 'dash'
             logger.info(f"Using model type: {model_type}")
 
-        # Initialize services
-        spectrum_service = SpectrumService(file_repo, osc_repo)
-        classification_service = ClassificationService(model_factory)
-
         # Get spectrum data, construct OSC ref if needed
         osc_ref = parsed_params.get('oscRef')
         if osc_ref:
@@ -201,6 +196,14 @@ async def process_spectrum(
             file=file,
             osc_ref=osc_ref
         )
+
+        # Save spectrum to database for persistence
+        try:
+            await spectrum_service.save_spectrum(spectrum)
+            logger.info(f"Spectrum {spectrum.id} saved to database")
+        except Exception as e:
+            logger.warning(f"Failed to save spectrum to database: {e}")
+            # Continue with processing even if save fails
 
         # Process spectrum with parameters
         processed_spectrum = await processing_service.process_spectrum_with_params(
@@ -244,7 +247,7 @@ async def estimate_redshift(
     file: Optional[UploadFile] = File(None),
     sn_type: str = Form(...),
     age_bin: str = Form(...),
-    redshift_service: RedshiftService = Depends(RedshiftService),
+    redshift_service: RedshiftService = Depends(get_redshift_service),
 ):
     """
     Estimate redshift from a spectrum using DASH (CNN) templates.

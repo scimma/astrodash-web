@@ -1,4 +1,4 @@
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional
 from pydantic import validator, ValidationError as PydanticValidationError
 import numpy as np
 import torch
@@ -22,6 +22,26 @@ def validate_spectrum_data(x: List[float], y: List[float]) -> None:
         raise ValidationError("Spectrum x and y must be non-empty and of equal length.")
     if np.any(np.isnan(x)) or np.any(np.isnan(y)):
         raise ValidationError("Spectrum data contains NaN values.")
+
+
+def validate_spectrum(x: List[float], y: List[float], redshift: Optional[float] = None) -> None:
+    """
+    Comprehensive validation for spectrum data including x, y, and redshift.
+
+    Args:
+        x: List of wavelength values
+        y: List of flux values
+        redshift: Optional redshift value
+
+    Raises:
+        ValidationError: If any validation fails
+    """
+    # Validate spectrum data (x and y)
+    validate_spectrum_data(x, y)
+
+    # Validate redshift if provided
+    if redshift is not None:
+        validate_redshift(redshift)
 
 
 def validate_redshift(redshift: Any) -> float:
@@ -66,6 +86,26 @@ def validate_user_model(model_path: str, input_shape: List[int], allowed_exts: L
             raise ValidationError(f"Model output shape {getattr(output, 'shape', None)} is invalid.")
     except Exception as e:
         raise ValidationError(f"Failed to load or validate user model: {e}")
+
+
+def validate_user_model_basic(model_path: Optional[str], class_mapping_path: Optional[str], input_shape_path: Optional[str]) -> None:
+    """
+    Basic validation for UserModel fields.
+
+    Args:
+        model_path: Path to the model file
+        class_mapping_path: Path to the class mapping file
+        input_shape_path: Path to the input shape file
+
+    Raises:
+        ValidationError: If any required field is missing
+    """
+    if not model_path:
+        raise ValidationError("Model path is required")
+    if not class_mapping_path:
+        raise ValidationError("Class mapping path is required")
+    if not input_shape_path:
+        raise ValidationError("Input shape path is required")
 
 
 def validate_class_mapping(class_mapping: Dict[str, int]) -> None:

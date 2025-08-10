@@ -1,55 +1,51 @@
-import os
-import json
 import torch
 import numpy as np
 from typing import Any, Optional
 from app.infrastructure.ml.classifiers.base import BaseClassifier
+from app.infrastructure.storage.model_storage import ModelStorage
 from app.config.settings import get_settings, Settings
 from app.config.logging import get_logger
-from app.core.exceptions import FileNotFoundException
 
 logger = get_logger(__name__)
 
 class UserClassifier(BaseClassifier):
-    def __init__(self, user_model_id: str, config: Settings = None):
+    def __init__(self, user_model_id: str, model_storage: ModelStorage, config: Settings = None):
         super().__init__(config)
         self.user_model_id = user_model_id
         self.config = config or get_settings()
-        self.model_dir = self.config.user_model_dir
-        # Create subdirectory structure to match ModelStorage
-        self.model_base = os.path.join(self.model_dir, self.user_model_id, self.user_model_id)
-        self.model_path = self.model_base + '.pth'
-        self.mapping_path = self.model_base + '.classes.json'
-        self.input_shape_path = self.model_base + '.input_shape.json'
+        self.model_storage = model_storage
         self.model = None
         self.class_map = None
         self.input_shape = None
         self._load_model_and_metadata()
 
     def _load_model_and_metadata(self):
-        if not os.path.exists(self.model_path):
-            logger.error(f"User model file not found: {self.model_path}")
-            raise FileNotFoundException(self.model_path)
-        if not os.path.exists(self.mapping_path):
-            logger.error(f"User model class mapping not found: {self.mapping_path}")
-            raise FileNotFoundException(self.mapping_path)
-        if not os.path.exists(self.input_shape_path):
-            logger.error(f"User model input shape not found: {self.input_shape_path}")
-            raise FileNotFoundException(self.input_shape_path)
-        self.model = torch.jit.load(self.model_path, map_location='cpu')
-        self.model.eval()
-        with open(self.mapping_path, 'r') as f:
-            self.class_map = json.load(f)
-        with open(self.input_shape_path, 'r') as f:
-            self.input_shape = json.load(f)
-        logger.info(f"Loaded user model {self.user_model_id} with input shape {self.input_shape}")
+        """Load user model and metadata using ModelStorage."""
+        try:
+            # Use ModelStorage to get file paths and load data
+            model_path = self.model_storage.get_model_path(self.user_model_id)
+            self.class_map = self.model_storage.load_class_mapping(self.user_model_id)
+            self.input_shape = self.model_storage.load_input_shape(self.user_model_id)
+
+            # Load the model
+            self.model = torch.jit.load(model_path, map_location='cpu')
+            self.model.eval()
+
+            logger.info(f"Loaded user model {self.user_model_id} with input shape {self.input_shape}")
+        except FileNotFoundError as e:
+            logger.error(f"User model files not found: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Failed to load user model {self.user_model_id}: {e}")
+            raise
 
     async def classify(self, spectrum: Any) -> dict:
         try:
             flux = np.array(spectrum.y)
             wavelength = np.array(spectrum.x)
             redshift = getattr(spectrum, 'redshift', 0.0) or 0.0
-            # Handle different input shapes based on model type
+
+            # Handle different input shapes based on model type. So far only CNN and Transformer.
             if len(self.input_shape) == 4:  # [batch, channels, height, width] - CNN style
                 flat_size = np.prod(self.input_shape[1:])
                 flux_flat = np.zeros(flat_size)
@@ -60,14 +56,23 @@ class UserClassifier(BaseClassifier):
                     output = self.model(model_input)
                 probs = torch.softmax(output, dim=-1).cpu().numpy()[0]
             else:  # Transformer style - needs wavelength, flux, redshift
-                # Interpolate to 1024 points if needed
-                if len(flux) != 1024:
+                # Dynamically infer target length from model input shape
+                # For transformer models, input shape should be [batch, sequence_length]
+                if len(self.input_shape) == 2:
+                    target_length = self.input_shape[1]  # sequence_length dimension
+                else:
+                    # Fallback: use the first dimension that's not batch size
+                    target_length = next((dim for dim in self.input_shape if dim != 1), 1024)
+
+                logger.info(f"Transformer model input shape: {self.input_shape}, inferred target length: {target_length}")
+
+                if len(flux) != target_length:
                     x_old = np.linspace(0, 1, len(flux))
-                    x_new = np.linspace(0, 1, 1024)
+                    x_new = np.linspace(0, 1, target_length)
                     flux = np.interp(x_new, x_old, flux)
                     wavelength = np.interp(x_new, x_old, wavelength)
-                wavelength_tensor = torch.tensor(wavelength, dtype=torch.float32).unsqueeze(0)  # [1, 1024]
-                flux_tensor = torch.tensor(flux, dtype=torch.float32).unsqueeze(0)              # [1, 1024]
+                wavelength_tensor = torch.tensor(wavelength, dtype=torch.float32).unsqueeze(0)  # [1, target_length]
+                flux_tensor = torch.tensor(flux, dtype=torch.float32).unsqueeze(0)              # [1, target_length]
                 redshift_tensor = torch.tensor([[redshift]], dtype=torch.float32)               # [1, 1]
                 with torch.no_grad():
                     output = self.model(wavelength_tensor, flux_tensor, redshift_tensor)
@@ -83,7 +88,7 @@ class UserClassifier(BaseClassifier):
                     'probability': float(probs[idx]),
                     'redshift': redshift,
                     'rlap': None,  # Not calculated for user-uploaded models
-                    'reliable': bool(probs[idx] > 0.5)
+                    'reliable': bool(probs[idx] > self.config.user_model_reliability_threshold)
                 })
             best_match = matches[0] if matches else {'type': 'Unknown', 'age': 'N/A', 'probability': 0.0}
             return {

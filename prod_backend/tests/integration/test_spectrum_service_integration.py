@@ -10,6 +10,7 @@ if APP_PATH not in sys.path:
 from domain.services.spectrum_service import SpectrumService
 from infrastructure.storage.file_spectrum_repository import FileSpectrumRepository, OSCSpectrumRepository
 from domain.models.spectrum import Spectrum
+from shared.utils.validators import validate_spectrum
 
 TEST_FILES_DIR = os.path.join(os.path.dirname(__file__), '../files')
 DAT_FILE = os.path.join(TEST_FILES_DIR, 'ptf10hgi.p67.dat')
@@ -24,7 +25,7 @@ async def test_get_spectrum_from_file_dat():
     with open(DAT_FILE, 'rb') as f:
         spectrum = await service.get_spectrum_from_file(f)
     assert spectrum is not None
-    assert spectrum.is_valid()
+    validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
     assert len(spectrum.x) > 0
     assert len(spectrum.y) > 0
 
@@ -36,7 +37,7 @@ async def test_get_spectrum_from_file_lnw():
     with open(LNW_FILE, 'rb') as f:
         spectrum = await service.get_spectrum_from_file(f)
     assert spectrum is not None
-    assert spectrum.is_valid()
+    validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
     assert len(spectrum.x) > 0
     assert len(spectrum.y) > 0
 
@@ -55,6 +56,6 @@ async def test_get_spectrum_from_osc():
     service = SpectrumService(file_repo, mock_osc_repo)
     spectrum = await service.get_spectrum_from_osc(OSC_REF)
     assert spectrum is not None
-    assert spectrum.is_valid()
+    validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
     assert len(spectrum.x) > 0
     assert len(spectrum.y) > 0

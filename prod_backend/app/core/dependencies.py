@@ -21,11 +21,14 @@ from app.infrastructure.ml.model_factory import ModelFactory
 from app.domain.services.template_analysis_service import TemplateAnalysisService
 from app.domain.services.line_list_service import LineListService
 from app.domain.services.spectrum_processing_service import SpectrumProcessingService
+from app.domain.services.batch_processing_service import BatchProcessingService
+from app.domain.services.spectrum_service import SpectrumService
+from app.domain.services.classification_service import ClassificationService
 
-# Repository imports
-from app.domain.repositories.spectrum_repository import create_spectrum_template_handler
+# Template infrastructure imports
+from app.infrastructure.ml.templates import create_spectrum_template_handler
 
-# Settings dependency (singleton)
+# Settings dependency
 @lru_cache()
 def get_app_settings() -> Settings:
     """Get the application settings (singleton)."""
@@ -44,6 +47,12 @@ def get_osc_spectrum_repo(settings: Settings = Depends(get_app_settings)) -> OSC
 def get_model_factory(settings: Settings = Depends(get_app_settings)) -> ModelFactory:
     """Dependency to get model factory."""
     return ModelFactory(config=settings)
+
+# Model storage dependency
+def get_model_storage(settings: Settings = Depends(get_app_settings)):
+    """Dependency to get model storage."""
+    from app.infrastructure.storage.model_storage import ModelStorage
+    return ModelStorage(settings.user_model_dir)
 
 # SQLAlchemy repository dependencies
 def get_sqlalchemy_model_repository(db: Session = Depends(get_db)) -> SQLAlchemyModelRepository:
@@ -65,6 +74,48 @@ def get_line_list_service() -> LineListService:
     """Dependency to get line list service."""
     return LineListService()
 
-def get_spectrum_processing_service() -> SpectrumProcessingService:
+def get_spectrum_processing_service(
+    settings = Depends(get_app_settings)
+) -> SpectrumProcessingService:
     """Dependency to get spectrum processing service."""
-    return SpectrumProcessingService()
+    from app.domain.services.spectrum_processing_service import SpectrumProcessingService
+    return SpectrumProcessingService(settings)
+
+def get_classification_service(
+    model_factory = Depends(get_model_factory)
+) -> ClassificationService:
+    """Dependency to get classification service."""
+    return ClassificationService(model_factory)
+
+def get_model_service(
+    model_repo = Depends(get_sqlalchemy_model_repository),
+    model_storage = Depends(get_model_storage)
+):
+    """Dependency to get model service with storage."""
+    from app.domain.services.model_service import ModelService
+    return ModelService(model_repo, model_storage)
+
+def get_redshift_service(
+    settings = Depends(get_app_settings)
+):
+    """Dependency to get redshift service."""
+    from app.domain.services.redshift_service import RedshiftService
+    return RedshiftService(settings)
+
+def get_spectrum_service(
+    file_repo = Depends(get_file_spectrum_repo),
+    osc_repo = Depends(get_osc_spectrum_repo),
+    db_repo = Depends(get_sqlalchemy_spectrum_repository),
+    settings = Depends(get_app_settings)
+):
+    """Dependency to get spectrum service."""
+    from app.domain.services.spectrum_service import SpectrumService
+    return SpectrumService(file_repo, osc_repo, db_repo, settings)
+
+def get_batch_processing_service(
+    spectrum_service = Depends(get_spectrum_service),
+    classification_service = Depends(get_classification_service),
+    processing_service = Depends(get_spectrum_processing_service)
+) -> BatchProcessingService:
+    """Dependency to get batch processing service."""
+    return BatchProcessingService(spectrum_service, classification_service, processing_service)

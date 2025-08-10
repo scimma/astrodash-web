@@ -30,7 +30,7 @@ class BatchProcessingService:
 
     async def process_batch(
         self,
-        files: Union[Any, List[Any]],  # Using Any to handle starlette.datastructures.UploadFile
+        files: Union[Any, List[Any]],
         params: Dict[str, Any],
         model_type: str,
         model_id: Optional[str] = None
@@ -75,7 +75,7 @@ class BatchProcessingService:
 
     async def _process_zip_file(
         self,
-        zip_file: Any,  # Using Any to handle starlette.datastructures.UploadFile
+        zip_file: Any,
         params: Dict[str, Any],
         model_type: str,
         model_id: Optional[str] = None
@@ -117,20 +117,16 @@ class BatchProcessingService:
 
     async def _process_file_list(
         self,
-        files: List[Any],  # Using Any to handle starlette.datastructures.UploadFile
+        files: List[Any],
         params: Dict[str, Any],
         model_type: str,
         model_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Process a list of individual files."""
-        # Ensure files is a list and handle edge cases
+        # In case empty for some reason
         if not files:
             logger.warning("No files provided for processing")
             return {}
-
-        if not isinstance(files, list):
-            logger.error(f"Expected list of files, got {type(files)}")
-            return {"error": "Invalid file list format"}
 
         logger.info(f"Processing {len(files)} individual files")
 
@@ -158,7 +154,7 @@ class BatchProcessingService:
         logger.info(f"File list processing completed. Processed {len(results)} files.")
         return results
 
-    def _prepare_file_object(self, fname: str, file_obj) -> Any:  # Using Any to handle starlette.datastructures.UploadFile
+    def _prepare_file_object(self, fname: str, file_obj) -> Any:
         """Prepare a file-like object for the spectrum service."""
         ext = fname.lower().split('.')[-1]
 

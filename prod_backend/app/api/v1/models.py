@@ -2,11 +2,11 @@ from fastapi import APIRouter, UploadFile, File, Form, Depends
 from fastapi.responses import JSONResponse
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
-from app.core.dependencies import get_app_settings, get_sqlalchemy_model_repository
+from app.core.dependencies import get_model_service
 from app.domain.services.model_service import ModelService
 from app.shared.schemas.user_model import UserModelSchema, ModelUploadResponse, UserModelInfo, ModelInfoResponse
 from app.domain.models.user_model import UserModel
-from app.infrastructure.storage.model_storage import ModelStorage
+
 from app.shared.utils.validators import ValidationError
 from app.config.logging import get_logger
 from app.core.exceptions import (
@@ -28,8 +28,7 @@ async def upload_model(
     name: str = Form(""),
     description: str = Form(""),
     owner: str = Form(""),
-    settings = Depends(get_app_settings),
-    repo = Depends(get_sqlalchemy_model_repository)
+    model_service: ModelService = Depends(get_model_service)
 ):
     """
     Upload and validate a user's PyTorch model.
@@ -43,16 +42,11 @@ async def upload_model(
     6. Metadata extraction
     """
     try:
-        # Initialize storage and service
-        user_model_dir = settings.user_model_dir
-        model_storage = ModelStorage(user_model_dir)
-        service = ModelService(repo, model_storage)
-
         # Read file content
         model_content = await file.read()
 
         # Upload and validate model using service
-        user_model, model_info = await service.upload_model(
+        user_model, model_info = await model_service.upload_model(
             model_content=model_content,
             filename=file.filename,
             class_mapping_str=class_mapping,
@@ -93,18 +87,16 @@ async def models_health_check():
 
 @router.get("/models", response_model=List[UserModelSchema])
 async def list_models(
-    repo = Depends(get_sqlalchemy_model_repository),
-    settings = Depends(get_app_settings)
+    model_service: ModelService = Depends(get_model_service)
 ):
     """
     List all uploaded models with additional metadata.
     """
     try:
-        service = ModelService(repo)
-        models = await service.list_models()
+        models = await model_service.list_models()
 
-        # Load additional metadata for each model
-        model_storage = ModelStorage(settings.user_model_dir)
+        # Load additional metadata from service
+        # Note: The enhanced metadata loading should be moved to the service layer
         enhanced_models = []
 
         for model in models:
@@ -114,9 +106,11 @@ async def list_models(
 
                 # Load additional metadata from storage
                 try:
-                    class_mapping = model_storage.load_class_mapping(model.id)
-                    input_shape = model_storage.load_input_shape(model.id)
-                    metadata = model_storage.load_model_metadata(model.id)
+                    # Get comprehensive model info from service
+                    model_info = model_service.get_model_info(model.id)
+                    class_mapping = model_info.get('class_mapping', {})
+                    input_shape = model_info.get('input_shape', [])
+                    metadata = {k: v for k, v in model_info.items() if k not in ['class_mapping', 'input_shape']}
 
                     # Add the additional fields that frontend expects
                     model_data.update({
@@ -151,19 +145,14 @@ async def list_models(
 @router.get("/models/{model_id}", response_model=ModelInfoResponse)
 async def get_model_info(
     model_id: str,
-    repo = Depends(get_sqlalchemy_model_repository),
-    settings = Depends(get_app_settings)
+    model_service: ModelService = Depends(get_model_service)
 ):
     """
     Get detailed information about a specific model.
     """
     try:
-        user_model_dir = settings.user_model_dir
-        model_storage = ModelStorage(user_model_dir)
-        service = ModelService(repo, model_storage)
-
         # Get model info from service
-        model_info = service.get_model_info(model_id)
+        model_info = model_service.get_model_info(model_id)
 
         return ModelInfoResponse(**model_info)
 
@@ -177,18 +166,13 @@ async def get_model_info(
 @router.delete("/models/{model_id}")
 async def delete_model(
     model_id: str,
-    repo = Depends(get_sqlalchemy_model_repository),
-    settings = Depends(get_app_settings)
+    model_service: ModelService = Depends(get_model_service)
 ):
     """
     Delete a model and all associated files.
     """
     try:
-        user_model_dir = settings.user_model_dir
-        model_storage = ModelStorage(user_model_dir)
-        service = ModelService(repo, model_storage)
-
-        await service.delete_model(model_id)
+        await model_service.delete_model(model_id)
 
         return JSONResponse(
             content={
@@ -209,17 +193,12 @@ async def update_model(
     model_id: str,
     name: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
-    repo = Depends(get_sqlalchemy_model_repository),
-    settings = Depends(get_app_settings)
+    model_service: ModelService = Depends(get_model_service)
 ):
     """
     Update model metadata.
     """
     try:
-        user_model_dir = settings.user_model_dir
-        model_storage = ModelStorage(user_model_dir)
-        service = ModelService(repo, model_storage)
-
         updates = {}
         if name is not None:
             updates["name"] = name
@@ -229,7 +208,7 @@ async def update_model(
         if not updates:
             raise ModelValidationException("No updates provided")
 
-        updated_model = await service.update_model_metadata(model_id, updates)
+        updated_model = await model_service.update_model_metadata(model_id, updates)
 
         return JSONResponse(
             content={
@@ -249,14 +228,13 @@ async def update_model(
 @router.get("/models/owner/{owner}", response_model=List[UserModelSchema])
 async def list_models_by_owner(
     owner: str,
-    repo = Depends(get_sqlalchemy_model_repository)
+    model_service: ModelService = Depends(get_model_service)
 ):
     """
     List models by owner.
     """
     try:
-        service = ModelService(repo)
-        models = await service.list_models_by_owner(owner)
+        models = await model_service.list_models_by_owner(owner)
         return [UserModelSchema(**m.__dict__) for m in models]
     except ValidationError as e:
         logger.warning(f"Failed to list models for owner {owner}: {e}")

@@ -13,7 +13,7 @@ services:
     volumes:
       - ./storage:/app/storage
       - ./logs:/app/logs
-      - ./app/astrodash_models:/app/app/astrodash_models
+      - /data:/data  # External data directory for models and templates
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

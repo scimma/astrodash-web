@@ -21,7 +21,7 @@ DAT_FILE = os.path.join(TEST_FILES_DIR, 'ptf10hgi.p67.dat')
 @pytest.mark.asyncio
 async def test_user_classifier_integration():
     config = Mock()
-    config.user_model_dir = "/home/jesusca/code_personal/astrodash-web/backend/astrodash_models/user_uploaded"
+    config.user_model_dir = "/data/user_models"
 
     # Mock the model loading to avoid file system dependencies
     with patch.object(UserClassifier, "_load_model_and_metadata", lambda self: None):

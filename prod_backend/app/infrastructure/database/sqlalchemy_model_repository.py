@@ -1,11 +1,9 @@
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from sqlalchemy.future import select
 from app.domain.repositories.model_repository import ModelRepository
 from app.domain.models.user_model import UserModel
 from app.infrastructure.database.models import UserModelDB
-from app.core.exceptions import ModelNotFoundException
-import asyncio
+from app.core.exceptions import ModelNotFoundException, ModelValidationException
 
 class SQLAlchemyModelRepository(ModelRepository):
     """
@@ -15,7 +13,7 @@ class SQLAlchemyModelRepository(ModelRepository):
     def __init__(self, db: Session):
         self.db = db
 
-    async def save(self, model: UserModel) -> UserModel:
+    def save(self, model: UserModel) -> UserModel:
         # Check if model already exists
         existing_model = self.db.query(UserModelDB).filter(UserModelDB.id == model.id).first()
 
@@ -48,21 +46,23 @@ class SQLAlchemyModelRepository(ModelRepository):
         self.db.refresh(db_model)
         return self._to_domain(db_model)
 
-    async def get_by_id(self, model_id: str) -> Optional[UserModel]:
+    def get_by_id(self, model_id: str) -> Optional[UserModel]:
         db_model = self.db.query(UserModelDB).filter(UserModelDB.id == model_id).first()
         return self._to_domain(db_model) if db_model else None
 
-    async def list_all(self) -> List[UserModel]:
+    def list_all(self) -> List[UserModel]:
         db_models = self.db.query(UserModelDB).all()
         return [self._to_domain(m) for m in db_models]
 
-    async def delete(self, model_id: str) -> None:
+    def delete(self, model_id: str) -> None:
         db_model = self.db.query(UserModelDB).filter(UserModelDB.id == model_id).first()
-        if db_model:
-            self.db.delete(db_model)
-            self.db.commit()
+        if not db_model:
+            raise ModelNotFoundException(model_id)
 
-    async def get_by_owner(self, owner: str) -> List[UserModel]:
+        self.db.delete(db_model)
+        self.db.commit()
+
+    def get_by_owner(self, owner: str) -> List[UserModel]:
         db_models = self.db.query(UserModelDB).filter(UserModelDB.owner == owner).all()
         return [self._to_domain(m) for m in db_models]
 

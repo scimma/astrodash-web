@@ -1,10 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Form, Depends
 from typing import Optional, List, Dict, Any, Union
 import json
-from app.core.dependencies import get_sqlalchemy_spectrum_repository, get_model_factory, get_osc_spectrum_repo, get_app_settings, get_spectrum_processing_service
-from app.domain.services.spectrum_service import SpectrumService
-from app.domain.services.classification_service import ClassificationService
-from app.domain.services.spectrum_processing_service import SpectrumProcessingService
+from app.core.dependencies import get_batch_processing_service, get_sqlalchemy_spectrum_repository, get_model_factory, get_osc_spectrum_repo, get_app_settings
 from app.domain.services.batch_processing_service import BatchProcessingService
 from app.shared.utils.helpers import sanitize_for_json
 from app.shared.schemas.classification import ClassificationSchema
@@ -13,6 +10,9 @@ from app.core.exceptions import (
     ValidationException,
     BatchProcessingException
 )
+from app.domain.services.spectrum_service import SpectrumService
+from app.domain.services.classification_service import ClassificationService
+from app.domain.services.spectrum_processing_service import SpectrumProcessingService
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -23,11 +23,7 @@ async def batch_process(
     zip_file: Optional[UploadFile] = File(None),
     files: Optional[List[UploadFile]] = File(None),
     model_id: Optional[str] = Form(None),
-    db_repo = Depends(get_sqlalchemy_spectrum_repository),
-    model_factory = Depends(get_model_factory),
-    osc_repo = Depends(get_osc_spectrum_repo),
-    settings = Depends(get_app_settings),
-    processing_service: SpectrumProcessingService = Depends(get_spectrum_processing_service)
+    batch_service: BatchProcessingService = Depends(get_batch_processing_service)
 ):
     """
     Batch classification endpoint that accepts either:
@@ -65,13 +61,6 @@ async def batch_process(
             if model_type not in ['dash', 'transformer']:
                 model_type = 'dash'
             logger.info(f"Using model type: {model_type}")
-
-        # Initialize services
-        spectrum_service = SpectrumService(db_repo, osc_repo)
-        classification_service = ClassificationService(model_factory)
-        batch_service = BatchProcessingService(
-            spectrum_service, classification_service, processing_service
-        )
 
         # Determine input type and process
         if zip_file:
@@ -115,13 +104,20 @@ async def batch_process_multiple(
     """
     logger.warning("Using deprecated /batch-process-multiple endpoint. Use /batch-process instead.")
 
-    # Delegate
+    # Create batch service manually for deprecated endpoint
+    # Get file repo for reading files
+    from app.infrastructure.storage.file_spectrum_repository import FileSpectrumRepository
+    file_repo = FileSpectrumRepository(settings)
+
+    spectrum_service = SpectrumService(file_repo, osc_repo, db_repo, settings)
+    classification_service = ClassificationService(model_factory)
+    processing_service = SpectrumProcessingService(settings)
+    batch_service = BatchProcessingService(spectrum_service, classification_service, processing_service)
+
+    # Delegate to new endpoint
     return await batch_process(
         params=params,
         files=files,
         model_id=model_id,
-        db_repo=db_repo,
-        model_factory=model_factory,
-        osc_repo=osc_repo,
-        settings=settings
+        batch_service=batch_service
     )

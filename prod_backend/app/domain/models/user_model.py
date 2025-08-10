@@ -23,6 +23,3 @@ class UserModel:
         self.input_shape_path = input_shape_path
         self.created_at = created_at or datetime.utcnow()
         self.meta = meta or {}
-
-    def is_valid(self) -> bool:
-        return bool(self.model_path and self.class_mapping_path and self.input_shape_path)

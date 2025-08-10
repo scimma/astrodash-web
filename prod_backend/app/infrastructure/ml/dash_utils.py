@@ -20,17 +20,10 @@ def get_training_parameters(models_dir: str = None) -> Dict[str, Any]:
         Dictionary containing training parameters (w0, w1, nw, nTypes, etc.)
     """
     if models_dir is None:
-        # Try to find models directory automatically
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        # Go up from infrastructure/ml to find the backend/astrodash_models directory
-        # Current path: prod_backend/app/infrastructure/ml/
-        # Target path: backend/astrodash_models/
-        backend_dir = os.path.join(current_dir, '..', '..', '..', '..', 'backend')
-        models_dir = os.path.join(backend_dir, 'astrodash_models')
-
-        # Verify the directory exists
-        if not os.path.exists(models_dir):
-            raise FileNotFoundError(f"Could not find astrodash_models directory at {models_dir}")
+        # Get path from settings
+        from app.config.settings import get_settings
+        settings = get_settings()
+        models_dir = os.path.dirname(settings.dash_training_params_path)
 
     return load_training_parameters(models_dir)
 
@@ -38,9 +31,14 @@ def load_training_parameters(models_dir: str) -> Dict[str, Any]:
     """
     Load training parameters for the Dash model from a pickle file.
     """
-    params_path = os.path.join(models_dir, "zeroZ/training_params.pickle")
+    # If models_dir is a directory, construct the path; otherwise use it as the full path
+    if os.path.isdir(models_dir):
+        params_path = os.path.join(models_dir, "zeroZ/training_params.pickle")
+    else:
+        params_path = models_dir
+
     logger = get_logger(__name__)
-    logger.info("Loading training parameters from pickle file.")
+    logger.info(f"Loading training parameters from: {params_path}")
     with open(params_path, "rb") as f:
         pars = pickle.load(f, encoding="latin1")
     logger.info("Training parameters loaded.")

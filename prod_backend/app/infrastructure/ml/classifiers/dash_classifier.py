@@ -30,29 +30,26 @@ class DashClassifier(BaseClassifier):
         self.w1 = self.config.w1
         if not self.processor:
             self.processor = DashSpectrumProcessor(self.w0, self.w1, self.nw)
-
-        # Load type names from training parameters like old backend
         self.type_names_list = self._load_type_names()
 
     def _load_type_names(self):
-        """Load type names from training parameters file like the old backend."""
+        """Load type names from training parameters file using settings."""
         try:
-            # Load training parameters from the same location as old backend
-            services_dir = os.path.dirname(os.path.abspath(__file__))
-            backend_root = os.path.join(services_dir, '..', '..', '..', '..', '..')
-            models_dir = os.path.join(backend_root, 'backend', 'astrodash_models')
-            training_params_path = os.path.join(models_dir, "zeroZ/training_params.pickle")
+            training_params_path = self.config.dash_training_params_path
+
+            if not os.path.exists(training_params_path):
+                logger.error(f"Training parameters file not found at {training_params_path}")
+                return []
 
             with open(training_params_path, 'rb') as f:
                 pars = pickle.load(f, encoding='latin1')
 
-            # Extract type list and generate type names like old backend
+            # Extract type list and generate type names like original
             type_list = pars.get('typeList', [])
             min_age = pars.get('minAge', -5)
             max_age = pars.get('maxAge', 15)
             age_bin_size = pars.get('ageBinSize', 4)
 
-            # Generate age labels like old backend
             age_labels = []
             age_bin_prev = 0
             age_label_min = min_age
@@ -65,7 +62,7 @@ class DashClassifier(BaseClassifier):
                 age_bin_prev = age_bin
             age_labels.append(f"{int(age_label_min)} to {int(max_age)}")
 
-            # Generate type names like old backend
+            # Generate type names like old dash
             type_names = []
             for t_type in type_list:
                 for age_label in age_labels:
@@ -82,9 +79,6 @@ class DashClassifier(BaseClassifier):
         """Split classification string like 'Ia: 2 to 6' into type and age."""
         parts = classification_string.split(': ')
         return "", parts[0], parts[1]
-
-    def _default_model_path(self):
-        return self.config.dash_model_path
 
     def _load_model(self):
         if not os.path.exists(self.model_path):
@@ -126,9 +120,8 @@ class DashClassifier(BaseClassifier):
         logger.info(f"Softmax shape: {softmax.shape}, type_names_list length: {len(self.type_names_list)}")
         logger.info(f"Using first {n_bins} outputs from model")
 
-        # Process ALL classifications like the old backend (not just top 3)
-        # This is crucial for scientific accuracy in probability combination
-        all_indices = np.argsort(softmax)[::-1]  # Sort all indices, not just top 3
+        # Process ALL classifications for future combination
+        all_indices = np.argsort(softmax)[::-1]  # Sort all indices
         matches = []
 
         logger.info(f"Processing all {len(all_indices)} classifications")
@@ -189,10 +182,9 @@ class DashClassifier(BaseClassifier):
         logger.info(f"RLAP calculation requested: {calculate_rlap}")
 
         if calculate_rlap:
-            logger.info("=== STARTING RLAP CALCULATION ===")
             try:
-                # Import RLAP calculation functions
-                from app.infrastructure.ml.rlap_calculator import prepare_log_wavelength_and_templates, get_templates_for_type_age, compute_rlap_for_matches, normalize_age_bin, get_nonzero_minmax, calculate_rlap_with_redshift
+                # Import RLAP functions
+                from app.infrastructure.ml.rlap_calculator import prepare_log_wavelength_and_templates, get_templates_for_type_age, normalize_age_bin, get_nonzero_minmax, calculate_rlap_with_redshift
 
                 # Prepare templates and log wavelength grid
                 log_wave, input_flux_log, snTemplates, dwlog, nw, w0, w1 = prepare_log_wavelength_and_templates(spectrum)
@@ -203,7 +195,6 @@ class DashClassifier(BaseClassifier):
                     age = match['age']
                     age_norm = normalize_age_bin(age)
 
-                    logger.info(f"Looking for template for RLap match {i+1}: sn_type='{sn_type}', age='{age}' (normalized: '{age_norm}')")
 
                     if sn_type in snTemplates:
                         logger.info(f"Available age bins for {sn_type}: {list(snTemplates[sn_type].keys())}")
@@ -212,7 +203,6 @@ class DashClassifier(BaseClassifier):
 
                     # Get templates for this match
                     template_fluxes, template_names, template_minmax_indexes = get_templates_for_type_age(snTemplates, sn_type, age_norm, log_wave)
-                    logger.info(f"Found {len(template_fluxes)} templates for {sn_type}/{age_norm}")
 
                     if template_fluxes:
                         try:
@@ -224,7 +214,6 @@ class DashClassifier(BaseClassifier):
                             )
                             match['rlap'] = rlap_label
                             match['rlap_warning'] = rlap_warning
-                            logger.info(f"RLAP for match {i+1} ({sn_type}): {rlap_label} (warning: {rlap_warning})")
                         except Exception as e:
                             logger.error(f"Error during RLAP calculation for match {i+1} ({sn_type}): {e}")
                             match['rlap'] = "N/A"
@@ -241,7 +230,6 @@ class DashClassifier(BaseClassifier):
                 best_match['rlap_warning'] = matches[0]['rlap_warning']
 
                 logger.info(f"RLap score calculated: {best_match.get('rlap', 'N/A')} (warning: {best_match.get('rlap_warning', False)})")
-                logger.info("=== FINISHED RLAP CALCULATION ===")
 
             except Exception as e:
                 logger.error(f"Error during RLAP calculation setup: {e}")
@@ -252,7 +240,6 @@ class DashClassifier(BaseClassifier):
                 best_match['rlap'] = "N/A"
                 best_match['rlap_warning'] = True
         else:
-            logger.info("RLAP calculation skipped as requested by user.")
             # Set default RLAP values when calculation is skipped
             for m in matches:
                 m['rlap'] = None
@@ -266,13 +253,6 @@ class DashClassifier(BaseClassifier):
             'best_match': best_match,
             'reliable_matches': reliable_flag
         }
-
-        # Debug logging to see what RLAP values are being returned
-        logger.info("=== FINAL RESPONSE DEBUG ===")
-        logger.info(f"Best match RLAP: {best_match.get('rlap', 'None')}")
-        for i, match in enumerate(matches[:3]):
-            logger.info(f"Match {i+1} ({match['type']}): RLAP = {match.get('rlap', 'None')}")
-        logger.info("=== END RESPONSE DEBUG ===")
 
         return result
 

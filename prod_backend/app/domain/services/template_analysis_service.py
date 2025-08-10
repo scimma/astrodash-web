@@ -1,33 +1,37 @@
-from typing import Dict, List, Any, Optional
-from app.domain.repositories.spectrum_repository import SpectrumTemplateInterface
-from app.shared.utils.validators import ValidationError
+from app.infrastructure.ml.templates import SpectrumTemplateInterface
 from app.config.logging import get_logger
-import numpy as np
+from app.core.exceptions import ValidationException
+import asyncio
+from typing import Dict, Any, List
 
 logger = get_logger(__name__)
 
 class TemplateAnalysisService:
     """
-    Domain service for analyzing and validating template data.
-    Handles template validation, SN type extraction, and age bin analysis.
+    Service for analyzing and validating spectrum templates.
+    Provides methods to get template statistics and validate template requests.
     """
 
     def __init__(self, template_handler: SpectrumTemplateInterface):
+        """Initialize with a template handler."""
         self.template_handler = template_handler
         logger.info("TemplateAnalysisService initialized")
 
     async def get_analysis_options(self) -> Dict[str, Any]:
         """
-        Get valid SN types and age bins for analysis.
+        Get available analysis options from templates.
 
         Returns:
-            Dictionary with 'sn_types' and 'age_bins_by_type'
+            Dictionary with SN types and their valid age bins
+
+        Raises:
+            ValidationException: If template data is invalid
         """
         try:
             logger.info("Getting analysis options from templates")
 
             # Get all available templates
-            templates = await self.template_handler.get_all_templates()
+            templates = await asyncio.to_thread(self.template_handler.get_all_templates)
 
             # Validate and extract valid SN types and age bins
             valid_options = self._validate_and_extract_options(templates)
@@ -44,11 +48,12 @@ class TemplateAnalysisService:
 
         except Exception as e:
             logger.error(f"Error getting analysis options: {e}")
-            raise ValidationError(f"Failed to get analysis options: {str(e)}")
+            raise ValidationException(f"Failed to get analysis options: {str(e)}")
 
     def _validate_and_extract_options(self, templates: Dict[str, Any]) -> Dict[str, List[str]]:
         """
-        Validate templates and extract valid SN types and age bins.
+        Extract SN types and age bins from templates.
+        Validation is delegated to the template handler.
 
         Args:
             templates: Raw template data from repository
@@ -61,9 +66,9 @@ class TemplateAnalysisService:
         for sn_type, age_bins in templates.items():
             valid_bins = []
 
-            for age_bin, entry in age_bins.items():
-                # Validate template entry
-                if self._is_valid_template_entry(entry):
+            for age_bin in age_bins.keys():
+                # Delegate validation to template handler
+                if self.template_handler.validate_template(sn_type, age_bin):
                     valid_bins.append(age_bin)
 
             # Only include SN types that have valid age bins
@@ -73,42 +78,6 @@ class TemplateAnalysisService:
 
         return valid_options
 
-    def _is_valid_template_entry(self, entry: Any) -> bool:
-        """
-        Validate if a template entry has valid snInfo data.
-
-        Args:
-            entry: Template entry to validate
-
-        Returns:
-            True if entry is valid, False otherwise
-        """
-        try:
-            # Check if entry has snInfo
-            sn_info = entry.get('snInfo', None)
-
-            # Validate snInfo structure
-            if not isinstance(sn_info, np.ndarray):
-                return False
-
-            # Check shape requirements
-            if not sn_info.shape or len(sn_info.shape) != 2:
-                return False
-
-            # Check minimum size requirements
-            if sn_info.shape[0] == 0:
-                return False
-
-            # Check expected column structure (wavelength, flux, etc.)
-            if sn_info.shape[1] != 4:  # Expected: [wavelength, flux, age, type]
-                return False
-
-            return True
-
-        except Exception as e:
-            logger.debug(f"Template entry validation failed: {e}")
-            return False
-
     async def get_template_statistics(self) -> Dict[str, Any]:
         """
         Get statistics about available templates.
@@ -117,29 +86,30 @@ class TemplateAnalysisService:
             Dictionary with template statistics
         """
         try:
-            templates = await self.template_handler.get_all_templates()
+            templates = await asyncio.to_thread(self.template_handler.get_all_templates)
 
             total_sn_types = len(templates)
             total_age_bins = sum(len(age_bins) for age_bins in templates.values())
             valid_sn_types = 0
             valid_age_bins = 0
 
+            # Count valid templates using template handler validation
             for sn_type, age_bins in templates.items():
-                type_valid_bins = 0
-                for age_bin, entry in age_bins.items():
-                    if self._is_valid_template_entry(entry):
-                        type_valid_bins += 1
+                valid_bins_for_type = 0
+                for age_bin in age_bins.keys():
+                    if self.template_handler.validate_template(sn_type, age_bin):
+                        valid_age_bins += 1
+                        valid_bins_for_type += 1
 
-                if type_valid_bins > 0:
+                if valid_bins_for_type > 0:
                     valid_sn_types += 1
-                    valid_age_bins += type_valid_bins
 
             return {
                 'total_sn_types': total_sn_types,
                 'total_age_bins': total_age_bins,
                 'valid_sn_types': valid_sn_types,
                 'valid_age_bins': valid_age_bins,
-                'validation_rate': {
+                'validity_rate': {
                     'sn_types': valid_sn_types / total_sn_types if total_sn_types > 0 else 0,
                     'age_bins': valid_age_bins / total_age_bins if total_age_bins > 0 else 0
                 }
@@ -147,37 +117,21 @@ class TemplateAnalysisService:
 
         except Exception as e:
             logger.error(f"Error getting template statistics: {e}")
-            raise ValidationError(f"Failed to get template statistics: {str(e)}")
+            raise ValidationException(f"Failed to get template statistics: {str(e)}")
 
     async def validate_template_request(self, sn_type: str, age_bin: str) -> bool:
         """
-        Validate if a specific SN type and age bin combination is available.
+        Validate if a template request is valid.
 
         Args:
             sn_type: Supernova type to validate
             age_bin: Age bin to validate
 
         Returns:
-            True if combination is valid, False otherwise
+            True if template exists and is valid, False otherwise
         """
         try:
-            # Get analysis options
-            options = await self.get_analysis_options()
-
-            # Check if SN type exists
-            if sn_type not in options['age_bins_by_type']:
-                logger.warning(f"SN type '{sn_type}' not found in valid options")
-                return False
-
-            # Check if age bin exists for this SN type
-            valid_age_bins = options['age_bins_by_type'][sn_type]
-            if age_bin not in valid_age_bins:
-                logger.warning(f"Age bin '{age_bin}' not found for SN type '{sn_type}'")
-                return False
-
-            logger.debug(f"Template request validated: {sn_type} / {age_bin}")
-            return True
-
+            return await asyncio.to_thread(self.template_handler.validate_template, sn_type, age_bin)
         except Exception as e:
             logger.error(f"Error validating template request: {e}")
             return False

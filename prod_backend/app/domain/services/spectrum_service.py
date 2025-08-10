@@ -2,7 +2,7 @@ from typing import Any, Optional
 from app.domain.models.spectrum import Spectrum
 from app.domain.repositories.spectrum_repository import SpectrumRepository
 from app.config.settings import Settings, get_settings
-from app.shared.utils.validators import validate_file_extension
+from app.shared.utils.validators import validate_file_extension, validate_spectrum
 from app.config.logging import get_logger
 from app.core.exceptions import (
     SpectrumValidationException,
@@ -10,48 +10,52 @@ from app.core.exceptions import (
     OSCServiceException,
     ValidationException
 )
+import asyncio
 
 logger = get_logger(__name__)
 
 class SpectrumService:
-    def __init__(self, file_repo: SpectrumRepository, osc_repo: SpectrumRepository, settings: Optional[Settings] = None):
+    def __init__(self, file_repo: SpectrumRepository, osc_repo: SpectrumRepository, db_repo: SpectrumRepository, settings: Optional[Settings] = None):
         """Service for spectrum operations. Injects repositories and settings."""
         self.file_repo = file_repo
         self.osc_repo = osc_repo
+        self.db_repo = db_repo
         self.settings = settings or get_settings()
 
     async def get_spectrum_from_file(self, file: Any) -> Spectrum:
         logger.info(f"Getting spectrum from file: {getattr(file, 'filename', 'unknown')}")
-        spectrum = await self.file_repo.get_from_file(file)
+        spectrum = await asyncio.to_thread(self.file_repo.get_from_file, file)
         logger.info(f"Repository returned spectrum: {spectrum}")
 
         if not spectrum:
             logger.error("Repository returned None spectrum")
             raise FileReadException(getattr(file, 'filename', 'unknown'), "Invalid or unreadable spectrum file.")
 
-        logger.info(f"Spectrum is_valid() result: {spectrum.is_valid()}")
-        if not spectrum.is_valid():
-            logger.error("Spectrum validation failed")
+        try:
+            validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
+            logger.info("Spectrum validation passed")
+        except Exception as e:
+            logger.error(f"Spectrum validation failed: {e}")
             raise SpectrumValidationException("Invalid or unreadable spectrum file.")
 
-        logger.info("Spectrum validation passed")
         return spectrum
 
     async def get_spectrum_from_osc(self, osc_ref: str) -> Spectrum:
         logger.info(f"Spectrum service: Starting to get spectrum from OSC reference: {osc_ref}")
-        spectrum = await self.osc_repo.get_by_osc_ref(osc_ref)
+        spectrum = await asyncio.to_thread(self.osc_repo.get_by_osc_ref, osc_ref)
         logger.info(f"Spectrum service: OSC repository returned spectrum: {spectrum}")
 
         if not spectrum:
             logger.error(f"Spectrum service: OSC repository returned None spectrum for {osc_ref}")
             raise OSCServiceException(f"Could not retrieve valid spectrum data from OSC for reference: {osc_ref}. The spectrum may not exist or the OSC API may be unavailable.")
 
-        logger.info(f"Spectrum service: Spectrum validation result: {spectrum.is_valid()}")
-        if not spectrum.is_valid():
-            logger.error(f"Spectrum service: Spectrum validation failed for {osc_ref}")
+        try:
+            validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
+            logger.info(f"Spectrum service: Successfully retrieved and validated OSC spectrum for {osc_ref}")
+        except Exception as e:
+            logger.error(f"Spectrum service: Spectrum validation failed for {osc_ref}: {e}")
             raise OSCServiceException(f"Could not retrieve valid spectrum data from OSC for reference: {osc_ref}. The spectrum may not exist or the OSC API may be unavailable.")
 
-        logger.info(f"Spectrum service: Successfully retrieved and validated OSC spectrum for {osc_ref}")
         return spectrum
 
     async def get_spectrum_data(self, file: Optional[Any] = None, osc_ref: Optional[str] = None) -> Spectrum:
@@ -88,8 +92,31 @@ class SpectrumService:
             logger.error(f"Error getting spectrum data: {e}")
             raise SpectrumValidationException(f"Spectrum data error: {str(e)}")
 
-    async def validate_spectrum(self, spectrum: Spectrum) -> bool:
+    async def save_spectrum(self, spectrum: Spectrum) -> Spectrum:
         """
-        Validate a spectrum's data (basic check).
+        Save spectrum to database.
+
+        Args:
+            spectrum: Spectrum object to save
+
+        Returns:
+            Spectrum object (after saving)
+
+        Raises:
+            SpectrumValidationException: If spectrum validation fails
         """
-        return spectrum.is_valid()
+        try:
+            logger.info(f"Saving spectrum {spectrum.id} to database")
+
+            # Validate spectrum before saving
+            validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
+
+            # Save to database using async wrapper
+            saved_spectrum = await asyncio.to_thread(self.db_repo.save, spectrum)
+
+            logger.info(f"Successfully saved spectrum {spectrum.id} to database")
+            return saved_spectrum
+
+        except Exception as e:
+            logger.error(f"Error saving spectrum to database: {e}")
+            raise SpectrumValidationException(f"Failed to save spectrum: {str(e)}")
