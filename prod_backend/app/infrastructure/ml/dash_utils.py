@@ -5,6 +5,8 @@ import numpy as np
 import torch
 from app.infrastructure.ml.classifiers.architectures import AstroDashPyTorchNet
 from app.config.logging import get_logger
+from app.config.settings import get_settings
+
 
 # Existing utility
 
@@ -20,8 +22,6 @@ def get_training_parameters(models_dir: str = None) -> Dict[str, Any]:
         Dictionary containing training parameters (w0, w1, nw, nTypes, etc.)
     """
     if models_dir is None:
-        # Get path from settings
-        from app.config.settings import get_settings
         settings = get_settings()
         models_dir = os.path.dirname(settings.dash_training_params_path)
 
@@ -52,8 +52,13 @@ def classification_split(classification_string: str) -> tuple:
     parts = classification_string.split(': ')
     return "", parts[0], parts[1] if len(parts) > 1 else None
 
+"""
+Deprecated (unused in prod_backend as of 2025-08-10):
+The following classes are retained for reference but commented out to avoid accidental use
+and unnecessary heavy dependencies. Do not delete without review.
+
 class AgeBinning:
-    """Handle age binning for supernova classification."""
+    '''Handle age binning for supernova classification'''
     def __init__(self, min_age: float, max_age: float, age_bin_size: float):
         self.min_age = min_age
         self.max_age = max_age
@@ -112,14 +117,14 @@ class LoadInputSpectra:
         self.type_names_list = CreateLabels(n_types, min_age, max_age, age_bin_size, type_list).type_names_list()
         self.n_bins = len(self.type_names_list)
         # Use DashSpectrumProcessor for preprocessing
-        from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor
+        from app.infrastructure.ml.data_processor import DashSpectrumProcessor
         processor = DashSpectrumProcessor(w0, w1, self.nw)
         logger = get_logger(__name__)
         logger.info(f"Loading and processing input spectra. z={z}, smooth={smooth}, min_wave={min_wave}, max_wave={max_wave}")
         if isinstance(file_path_or_data, str):
             data = np.loadtxt(file_path_or_data)
             wave, flux = data[:, 0], data[:, 1]
-        else:  # It's an object with x and y attributes
+        else:
             wave, flux = file_path_or_data.x, file_path_or_data.y
         self.flux, self.min_index, self.max_index, self.z = processor.process(
             np.array(wave), np.array(flux), z, smooth, min_wave, max_wave
@@ -161,8 +166,6 @@ class BestTypesListSingleRedshift:
         self.best_types = []
         self.softmax_ordered = []
         for i in range(outputs.shape[0]):
-            # Only use the first n_bins outputs (corresponding to actual galaxy types)
-            # The model may have been trained with more classes but only the first n_bins are valid
             softmax = outputs[i].numpy()[:n_bins]
             best_types, _, softmax_ordered = self.create_list(softmax)
             self.best_types.append(best_types)
@@ -173,6 +176,7 @@ class BestTypesListSingleRedshift:
         idx = np.argsort(softmax)[::-1]
         best_types = self.type_names_list[idx]
         return best_types, idx, softmax[idx]
+"""
 
 def combined_prob(best_match_list: list) -> tuple:
     """

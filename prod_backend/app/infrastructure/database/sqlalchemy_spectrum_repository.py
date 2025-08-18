@@ -19,21 +19,36 @@ class SQLAlchemySpectrumRepository(SpectrumRepository):
         """Save spectrum to database."""
         try:
             validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
+            # Check if spectrum already exists (upsert logic)
+            existing = self.db.query(SpectrumDB).filter(SpectrumDB.id == spectrum.id).first()
 
-            db_spectrum = SpectrumDB(
-                id=spectrum.id,
-                osc_ref=spectrum.osc_ref,
-                file_name=spectrum.file_name,
-                x=spectrum.x,
-                y=spectrum.y,
-                redshift=spectrum.redshift,
-                meta=spectrum.meta
-            )
-            self.db.add(db_spectrum)
-            self.db.commit()
-            self.db.refresh(db_spectrum)
-            logger.info(f"Saved spectrum {spectrum.id} to database")
-            return spectrum
+            if existing:
+                # Update existing record
+                existing.osc_ref = spectrum.osc_ref
+                existing.file_name = spectrum.file_name
+                existing.x = spectrum.x
+                existing.y = spectrum.y
+                existing.redshift = spectrum.redshift
+                existing.meta = spectrum.meta
+                self.db.commit()
+                logger.info(f"Updated existing spectrum {spectrum.id} in database")
+                return spectrum
+            else:
+                # Insert new record
+                db_spectrum = SpectrumDB(
+                    id=spectrum.id,
+                    osc_ref=spectrum.osc_ref,
+                    file_name=spectrum.file_name,
+                    x=spectrum.x,
+                    y=spectrum.y,
+                    redshift=spectrum.redshift,
+                    meta=spectrum.meta
+                )
+                self.db.add(db_spectrum)
+                self.db.commit()
+                self.db.refresh(db_spectrum)
+                logger.info(f"Saved spectrum {spectrum.id} to database")
+                return spectrum
         except Exception as e:
             logger.error(f"Error saving spectrum to database: {e}", exc_info=True)
             self.db.rollback()

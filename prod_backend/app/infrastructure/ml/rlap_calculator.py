@@ -7,7 +7,8 @@ import os
 import numpy as np
 from scipy.signal import argrelmax
 from app.infrastructure.ml.dash_utils import get_training_parameters
-from app.shared.utils.helpers import get_redshift_axis
+from app.infrastructure.ml.templates import create_spectrum_template_handler
+from app.shared.utils.helpers import get_redshift_axis, normalize_age_bin as _normalize_age_bin
 from app.shared.utils.redshift import get_median_redshift
 from app.config.settings import get_settings
 from app.config.logging import get_logger
@@ -43,7 +44,8 @@ class RlapCalculator:
         rmsTemp = np.sqrt(np.mean(templateFlux ** 2))
         xCorrNorm = xCorr / (rmsInput * rmsTemp * self.nw)
         rmsXCorr = np.sqrt(np.mean(xCorrNorm ** 2))
-        xCorrNormRearranged = np.roll(xCorrNorm, self.nw // 2)
+        # Use the raw normalized cross-correlation without rolling to keep zero-lag at index (nw - 1)
+        xCorrNormRearranged = xCorrNorm
         rmsA = 1
         return xCorr, rmsInput, rmsTemp, xCorrNorm, rmsXCorr, xCorrNormRearranged, rmsA
 
@@ -68,14 +70,25 @@ class RlapCalculator:
 
     def calculate_rlap(self, crosscorr, rmsAntisymmetric, templateFlux):
         r, deltapeak, fom = self._calculate_r(crosscorr, rmsAntisymmetric)
-        shift = int(deltapeak - self.nw / 2)
+        # Compute shift relative to the true zero-lag index of the full cross-correlation (which is at len(crosscorr)//2)
+        zero_lag_index = (len(crosscorr) - 1) // 2
+        shift = int(deltapeak - zero_lag_index)
         iminindex, imaxindex = self.min_max_index(self.inputFlux)
         tminindex, tmaxindex = self.min_max_index(templateFlux)
         overlapminindex = int(max(iminindex + shift, tminindex))
         overlapmaxindex = int(min(imaxindex - 1 + shift, tmaxindex - 1))
-        minWaveOverlap = self.wave[overlapminindex]
-        maxWaveOverlap = self.wave[overlapmaxindex]
-        lap = np.log(maxWaveOverlap / minWaveOverlap) if minWaveOverlap > 0 else 0
+
+        # Clamp to valid bounds to avoid out-of-range indexing
+        overlapminindex = max(0, min(self.nw - 1, overlapminindex))
+        overlapmaxindex = max(0, min(self.nw - 1, overlapmaxindex))
+
+        if overlapmaxindex <= overlapminindex:
+            # No valid overlap region
+            lap = 0.0
+        else:
+            minWaveOverlap = self.wave[overlapminindex]
+            maxWaveOverlap = self.wave[overlapmaxindex]
+            lap = np.log(maxWaveOverlap / minWaveOverlap) if minWaveOverlap > 0 else 0.0
         rlap = 5 * r * lap
         fom = fom * lap
         return r, lap, rlap, fom
@@ -186,18 +199,16 @@ def prepare_log_wavelength_and_templates(spectrum, template_filename=None):
     dwlog = np.log(w1 / w0) / nw
     log_wave = w0 * np.exp(np.arange(nw) * dwlog)
 
-    # Use template path from settings
-    settings = get_settings()
-    if template_filename is None:
-        template_path = settings.template_path
-    else:
-        # If custom filename provided, construct path relative to astrodash_models directory
+    # Obtain templates via the factory-backed template handler
+    # Support optional override of template path when a specific filename is provided
+    handler_template_path = None
+    if template_filename is not None:
+        settings = get_settings()
         template_dir = os.path.dirname(settings.template_path)
-        template_path = os.path.join(template_dir, template_filename)
+        handler_template_path = os.path.join(template_dir, template_filename)
 
-    data = np.load(template_path, allow_pickle=True)
-    snTemplates_raw = data['snTemplates'].item()
-    snTemplates = {str(k): v for k, v in snTemplates_raw.items()}
+    handler = create_spectrum_template_handler('dash', template_path=handler_template_path)
+    snTemplates = handler.get_all_templates()
     logger.debug(f"Available sn_types: {list(snTemplates.keys())}")
     for sn_type_key in snTemplates:
         logger.debug(f"  {sn_type_key}: {list(snTemplates[sn_type_key].keys())}")
@@ -242,11 +253,6 @@ def get_nonzero_minmax(flux):
     else:
         return 0, len(flux) - 1
 
-def normalize_age_bin(age):
-    """Normalize age bin strings to 'N to M' format."""
-    import re
-    age = age.replace('–', '-').replace('to', '-').replace('TO', '-').replace('To', '-')
-    age = age.replace(' ', '')
-    match = re.match(r'(-?\d+)-(-?\d+)', age)
-    if match:
-        return f"{int(match.group(1))} to {int(match.group(2))}"
+def normalize_age_bin(age: str) -> str:
+    """Proxy to shared helper to normalize age-bin strings to 'N to M' format."""
+    return _normalize_age_bin(age)

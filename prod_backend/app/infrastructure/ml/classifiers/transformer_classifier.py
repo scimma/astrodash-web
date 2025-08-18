@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from typing import Any, Optional, Dict
 from app.infrastructure.ml.classifiers.base import BaseClassifier
-from app.infrastructure.ml.processors.data_processor import TransformerSpectrumProcessor
+from app.infrastructure.ml.data_processor import TransformerSpectrumProcessor
 from app.infrastructure.ml.classifiers.architectures import spectraTransformerEncoder
 from app.shared.utils.helpers import interpolate_to_1024
 from app.config.settings import get_settings, Settings

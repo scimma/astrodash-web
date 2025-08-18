@@ -1,12 +1,13 @@
 """
 Transformer-specific template handler implementation.
-For now, returns empty templates as Transformer doesn't use traditional templates.
+For now, returns empty templates as Transformer doesn't use traditional templates.it is to be implemented
 """
 
 from typing import Dict, Any, Tuple
 import numpy as np
 from app.infrastructure.ml.templates.template_interface import SpectrumTemplateInterface
 from app.config.logging import get_logger
+from app.core.exceptions import TemplateNotFoundException
 
 logger = get_logger(__name__)
 
@@ -21,7 +22,7 @@ class TransformerSpectrumTemplate(SpectrumTemplateInterface):
 
     def get_template_spectrum(self, sn_type: str, age_bin: str) -> Tuple[np.ndarray, np.ndarray]:
         """Get template spectrum for Transformer model (not supported)."""
-        raise NotImplementedError("Transformer model doesn't use traditional templates")
+        raise TemplateNotFoundException(sn_type, age_bin)
 
     def get_all_templates(self) -> Dict[str, Any]:
         """Get all Transformer templates (empty for now)."""

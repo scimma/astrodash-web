@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional, Tuple
 from app.domain.models.spectrum import Spectrum
-from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor, TransformerSpectrumProcessor
+from app.infrastructure.ml.data_processor import DashSpectrumProcessor, TransformerSpectrumProcessor
 from app.shared.utils.helpers import interpolate_to_1024, normalise_spectrum
 from app.config.settings import Settings, get_settings
 from app.config.logging import get_logger

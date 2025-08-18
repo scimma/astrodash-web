@@ -4,7 +4,7 @@ from app.config.settings import Settings, get_settings
 from app.shared.utils.validators import validate_spectrum
 from app.config.logging import get_logger
 from app.core.exceptions import FileReadException, SpectrumValidationException
-from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor
+from app.infrastructure.ml.data_processor import DashSpectrumProcessor
 import json
 import os
 import uuid
@@ -328,7 +328,9 @@ class OSCSpectrumRepository(SpectrumRepository):
 
     def __init__(self, config: Settings = None):
         self.config = config or get_settings()
-        self.base_url = "https://sne.space/api"
+        # Use configurable OSC API URL, fallback to default if not set
+        self.base_url = getattr(self.config, 'osc_api_url', 'https://api.astrocats.space')
+        # The working backend uses the base URL directly, not with /api suffix
 
     def save(self, spectrum: Spectrum) -> Spectrum:
         # OSC repository doesn't save - it only retrieves
@@ -341,45 +343,63 @@ class OSCSpectrumRepository(SpectrumRepository):
     def get_by_osc_ref(self, osc_ref: str) -> Optional[Spectrum]:
         """Get spectrum from OSC API."""
         try:
-            # Make API request to OSC
-            url = f"{self.base_url}/spectra/{osc_ref}"
+            # Extract the SN name from the OSC reference format
+            # Input: "osc-sn2002er-0" -> Extract: "sn2002er" -> Convert to: "SN2002ER"
+            if osc_ref.startswith('osc-'):
+                # Remove "osc-" prefix and "-0" suffix
+                sn_name = osc_ref[4:-2]  # "osc-sn2002er-0" -> "sn2002er"
+            else:
+                sn_name = osc_ref
+
+            # The API expects the object name in uppercase
+            obj_name = sn_name.upper()
+
+            # Use the correct API structure: /{OBJECT_NAME}/spectra/time+data
+            url = f"{self.base_url}/{obj_name}/spectra/time+data"
+            logger.info(f"OSC repository: Attempting to fetch spectrum from {url}")
+
             response = requests.get(url, verify=False, timeout=30)
+            logger.info(f"OSC repository: Received response status {response.status_code} for {osc_ref}")
 
             if response.status_code != 200:
                 logger.error(f"OSC API returned status {response.status_code} for {osc_ref}")
+                logger.error(f"Response content: {response.text[:500]}")  # Log first 500 chars of response
                 return None
 
             data = response.json()
+            logger.debug(f"OSC repository: Raw API response for {osc_ref}: {data}")
 
-            if not data or 'spectra' not in data:
-                logger.error(f"No spectrum data found in OSC response for {osc_ref}")
+            # Parse using the actual API response structure
+            try:
+                # The API returns: {"SN2002ER": {"spectra": [["52512", [["wavelength", "flux"], ...]]]}}
+                # We need: data[obj_name]["spectra"][0][1] to get the spectrum data array
+                spectrum_data = data[obj_name]["spectra"][0][1]
+
+                # Convert to numpy arrays and transpose to get wave, flux
+                import numpy as np
+                wave, flux = np.array(spectrum_data).T.astype(float)
+
+                logger.info(f"OSC repository: Successfully parsed spectrum data for {osc_ref}")
+
+            except (KeyError, IndexError, TypeError) as e:
+                logger.error(f"Failed to parse spectrum data structure for {osc_ref}: {e}")
+                logger.error(f"Response structure: {list(data.keys()) if isinstance(data, dict) else type(data)}")
                 return None
 
-            # Parse the first spectrum
-            spectrum_data = data['spectra'][0] if isinstance(data['spectra'], list) else data['spectra']
-
-            # Extract wavelength and flux data
-            if 'wavelength' not in spectrum_data or 'flux' not in spectrum_data:
-                logger.error(f"Missing wavelength or flux data in OSC response for {osc_ref}")
-                return None
-
-            x = spectrum_data['wavelength']
-            y = spectrum_data['flux']
-
-            # Extract redshift if available
-            redshift = spectrum_data.get('redshift')
+            # Extract redshift if available (default to 0.0 as in reference)
+            redshift = 0.0  # Redshift needs to be fetched separately as per reference
 
             # Extract object name for filename
-            obj_name = data.get('name', osc_ref)
+            obj_name = data.get('name', obj_name)
 
-            # Generate spectrum ID
-            spectrum_id = f"osc_{osc_ref}"
+            # Generate spectrum ID using just the SN name to avoid duplicates
+            spectrum_id = f"osc_{sn_name}"
 
             # Create spectrum object
             spectrum = Spectrum(
                 id=spectrum_id,
-                x=x,
-                y=y,
+                x=wave.tolist(),  # Convert numpy array to list
+                y=flux.tolist(),   # Convert numpy array to list
                 redshift=redshift,
                 osc_ref=osc_ref,
                 file_name=f"{obj_name}.json",
@@ -400,6 +420,8 @@ class OSCSpectrumRepository(SpectrumRepository):
 
         except requests.RequestException as e:
             logger.error(f"OSC API request failed for {osc_ref}: {e}")
+            logger.error(f"OSC API URL being used: {self.base_url}")
+            logger.error(f"Full OSC reference: {osc_ref}")
             return None
         except Exception as e:
             logger.error(f"Error retrieving spectrum from OSC for {osc_ref}: {e}", exc_info=True)

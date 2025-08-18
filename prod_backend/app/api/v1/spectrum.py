@@ -9,7 +9,7 @@ from app.domain.services.spectrum_processing_service import SpectrumProcessingSe
 from app.domain.services.classification_service import ClassificationService
 from app.domain.services.redshift_service import RedshiftService
 from app.infrastructure.ml.templates import create_spectrum_template_handler
-from app.shared.schemas.spectrum import SpectrumSchema, SpectrumUploadResponse, SpectrumInfoResponse
+from app.shared.schemas.spectrum import SpectrumSchema
 from app.core.exceptions import (
     ValidationException,
     SpectrumValidationException,
@@ -60,68 +60,30 @@ async def get_analysis_options(
         raise ConfigurationException(f"Failed to fetch analysis options: {str(e)}")
 
 @router.get("/template-spectrum", response_model=SpectrumSchema)
-async def get_template_spectrum(sn_type: str = Query('Ia'), age_bin: str = Query('2 to 6'), settings = Depends(get_app_settings)):
+async def get_template_spectrum(
+    sn_type: str = Query('Ia'),
+    age_bin: str = Query('2 to 6'),
+    analysis_service: TemplateAnalysisService = Depends(get_template_analysis_service)
+):
     """Get template spectrum for a given SN type and age bin."""
     try:
         from urllib.parse import unquote_plus
+
+        # Decode URL parameters (same as before)
         sn_type_decoded = unquote_plus(sn_type)
         age_bin_decoded = unquote_plus(age_bin)
         logger.info(f"Requested sn_type: {repr(sn_type_decoded)}")
         logger.info(f"Requested age_bin: {repr(age_bin_decoded)}")
 
-        npz_path = settings.template_path
-        logger.info(f"Looking for template file at: {npz_path}")
-        logger.info(f"File exists: {os.path.exists(npz_path)}")
-
-        if not os.path.exists(npz_path):
-            logger.error(f"Template data file not found: {npz_path}")
-            raise TemplateNotFoundException(sn_type_decoded, age_bin_decoded)
-
-        data = np.load(npz_path, allow_pickle=True)
-        logger.info(f"Loaded npz file, keys: {list(data.keys())}")
-
-        snTemplates_raw = data['snTemplates'].item() if 'snTemplates' in data else data['arr_0'].item()
-        snTemplates = {str(k): v for k, v in snTemplates_raw.items()}
-
-        logger.info(f"Available SN types: {list(snTemplates.keys())}")
-        logger.info(f"Looking for SN type: {sn_type_decoded}")
-
-        if sn_type_decoded not in snTemplates:
-            logger.error(f"SN type '{sn_type_decoded}' not found in available types: {list(snTemplates.keys())}")
-            raise TemplateNotFoundException(sn_type_decoded)
-
-        if not isinstance(snTemplates[sn_type_decoded], dict):
-            snTemplates[sn_type_decoded] = dict(snTemplates[sn_type_decoded])
-
-        logger.info(f"Available age bins for {sn_type_decoded}: {list(snTemplates[sn_type_decoded].keys())}")
-        logger.info(f"Looking for age bin: {age_bin_decoded}")
-
-        if age_bin_decoded not in snTemplates[sn_type_decoded].keys():
-            logger.error(f"Age bin '{age_bin_decoded}' not found for SN type '{sn_type_decoded}'.")
-            raise TemplateNotFoundException(sn_type_decoded, age_bin_decoded)
-
-        snInfo = snTemplates[sn_type_decoded][age_bin_decoded].get('snInfo', None)
-        if not isinstance(snInfo, np.ndarray) or snInfo.shape[0] == 0:
-            logger.error(f"No template spectrum available for SN type '{sn_type_decoded}' and age bin '{age_bin_decoded}'.")
-            raise TemplateNotFoundException(sn_type_decoded, age_bin_decoded)
-
-        logger.info(f"snInfo shape: {snInfo.shape}, type: {type(snInfo)}")
-        logger.info(f"Loading only the first template (index 0) out of {snInfo.shape[0]} available templates")
-
-        # Only load first, placeholder for now
-        template = snInfo[0]
-        logger.info(f"template shape: {template.shape if hasattr(template, 'shape') else 'no shape'}, type: {type(template)}")
-
-        # template[0] is wavelength, template[1] is flux
-        wave = template[0]
-        flux = template[1]
-
-        logger.info(f"wave shape: {wave.shape if hasattr(wave, 'shape') else 'no shape'}, type: {type(wave)}")
-        logger.info(f"flux shape: {flux.shape if hasattr(flux, 'shape') else 'no shape'}, type: {type(flux)}")
+        # Use the template handler
+        wave, flux = analysis_service.template_handler.get_template_spectrum(sn_type_decoded, age_bin_decoded)
 
         logger.info(f"Template spectrum loaded for {sn_type_decoded} / {age_bin_decoded} (first template only)")
         return SpectrumSchema(x=wave.tolist(), y=flux.tolist())
 
+    except TemplateNotFoundException as e:
+        # Re-raise TemplateNotFoundException as-is (same behavior)
+        raise e
     except Exception as e:
         logger.error(f"Error loading template spectrum: {e}", exc_info=True)
         raise ConfigurationException(f"Error loading template spectrum: {str(e)}")

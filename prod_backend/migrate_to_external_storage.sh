@@ -26,6 +26,14 @@ else
     echo "⚠ DASH model directory not found at $SOURCE_DIR/zeroZ"
 fi
 
+if [ -d "$SOURCE_DIR/agnosticZ" ]; then
+    echo "Moving agnosticZ DASH model files..."
+    cp -r "$SOURCE_DIR/agnosticZ" "$DEST_DIR/pre_trained_models/dash/"
+    echo "✓ agnosticZ DASH model files moved to $DEST_DIR/pre_trained_models/dash/"
+else
+    echo "⚠ agnosticZ DASH model directory not found at $SOURCE_DIR/agnosticZ"
+fi
+
 # Move Transformer model files
 if [ -d "$SOURCE_DIR/yuqing_models" ]; then
     echo "Moving Transformer model files..."
@@ -36,12 +44,12 @@ else
 fi
 
 # Move template files
-if [ -f "$SOURCE_DIR/snand_host_templates.npz" ]; then
+if [ -f "$SOURCE_DIR/sn_and_host_templates.npz" ]; then
     echo "Moving template files..."
-    cp "$SOURCE_DIR/snand_host_templates.npz" "$DEST_DIR/pre_trained_models/templates/"
+    cp "$SOURCE_DIR/sn_and_host_templates.npz" "$DEST_DIR/pre_trained_models/templates/"
     echo "✓ Template files moved to $DEST_DIR/pre_trained_models/templates/"
 else
-    echo "⚠ Template file not found at $SOURCE_DIR/snand_host_templates.npz"
+    echo "⚠ Template file not found at $SOURCE_DIR/sn_and_host_templates.npz"
 fi
 
 if [ -f "$SOURCE_DIR/sneLineList.txt" ]; then

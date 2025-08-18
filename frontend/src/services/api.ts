@@ -141,6 +141,7 @@ class Api {
       return response.data;
     } catch (error) {
       handleApiError(error as AxiosError<ApiError>);
+      throw error; // This will never be reached but satisfies TypeScript
     }
   }
 
@@ -150,6 +151,7 @@ class Api {
       return response.data;
     } catch (error) {
       handleApiError(error as AxiosError<ApiError>);
+      throw error; // This will never be reached but satisfies TypeScript
     }
   }
 
@@ -172,6 +174,7 @@ class Api {
         message: error.message
       });
       handleApiError(error as AxiosError<ApiError>);
+      throw error; // This will never be reached but satisfies TypeScript
     }
   }
 
@@ -181,6 +184,7 @@ class Api {
       return response.data;
     } catch (error) {
       handleApiError(error as AxiosError<ApiError>);
+      throw error; // This will never be reached but satisfies TypeScript
     }
   }
 
@@ -209,6 +213,7 @@ class Api {
       return response.data;
     } catch (error) {
       handleApiError(error as AxiosError<ApiError>);
+      throw error; // This will never be reached but satisfies TypeScript
     }
   }
 
@@ -241,6 +246,7 @@ class Api {
       return response.data;
     } catch (error) {
       handleApiError(error as AxiosError<ApiError>);
+      throw error; // This will never be reached but satisfies TypeScript
     }
   }
 

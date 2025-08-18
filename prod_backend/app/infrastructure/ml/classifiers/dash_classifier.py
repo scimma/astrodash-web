@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 from typing import Any, Optional
 from app.infrastructure.ml.classifiers.base import BaseClassifier
-from app.infrastructure.ml.processors.data_processor import DashSpectrumProcessor
+from app.infrastructure.ml.data_processor import DashSpectrumProcessor
 from app.infrastructure.ml.classifiers.architectures import AstroDashPyTorchNet
 from app.config.settings import get_settings, Settings
 from app.infrastructure.ml.dash_utils import combined_prob

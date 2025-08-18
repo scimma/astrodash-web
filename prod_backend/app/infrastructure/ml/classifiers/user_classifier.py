@@ -39,6 +39,29 @@ class UserClassifier(BaseClassifier):
             logger.error(f"Failed to load user model {self.user_model_id}: {e}")
             raise
 
+    def _infer_sequence_length(self) -> int:
+        """Infer the target sequence length from input_shape metadata.
+        Handles cases where input_shape is a list of shapes (e.g., [[1,1024],[1,1024],[1,1]]).
+        """
+        shape = self.input_shape
+        # Case: list of shapes for multiple inputs
+        if isinstance(shape, (list, tuple)) and shape and isinstance(shape[0], (list, tuple)):
+            candidate_lengths = []
+            for sub in shape:
+                if isinstance(sub, (list, tuple)) and len(sub) >= 2:
+                    for dim in sub[1:]:
+                        if isinstance(dim, int) and dim > 1:
+                            candidate_lengths.append(dim)
+                            break
+            if candidate_lengths:
+                return int(max(candidate_lengths))
+        # Case: single shape like [batch, seq_len]
+        if isinstance(shape, (list, tuple)):
+            for dim in shape:
+                if isinstance(dim, int) and dim > 1:
+                    return int(dim)
+        return 1024
+
     async def classify(self, spectrum: Any) -> dict:
         try:
             flux = np.array(spectrum.y)
@@ -56,19 +79,12 @@ class UserClassifier(BaseClassifier):
                     output = self.model(model_input)
                 probs = torch.softmax(output, dim=-1).cpu().numpy()[0]
             else:  # Transformer style - needs wavelength, flux, redshift
-                # Dynamically infer target length from model input shape
-                # For transformer models, input shape should be [batch, sequence_length]
-                if len(self.input_shape) == 2:
-                    target_length = self.input_shape[1]  # sequence_length dimension
-                else:
-                    # Fallback: use the first dimension that's not batch size
-                    target_length = next((dim for dim in self.input_shape if dim != 1), 1024)
-
-                logger.info(f"Transformer model input shape: {self.input_shape}, inferred target length: {target_length}")
+                target_length = self._infer_sequence_length()
+                logger.info(f"Transformer model input shape: {self.input_shape}, inferred target length: {int(target_length)}")
 
                 if len(flux) != target_length:
                     x_old = np.linspace(0, 1, len(flux))
-                    x_new = np.linspace(0, 1, target_length)
+                    x_new = np.linspace(0, 1, int(target_length))
                     flux = np.interp(x_new, x_old, flux)
                     wavelength = np.interp(x_new, x_old, wavelength)
                 wavelength_tensor = torch.tensor(wavelength, dtype=torch.float32).unsqueeze(0)  # [1, target_length]

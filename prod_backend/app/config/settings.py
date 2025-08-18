@@ -15,12 +15,12 @@ class Settings(BaseSettings):
     cors_origins: List[str] = Field(["*"], env="CORS_ORIGINS")    # Allow all origins for API usage
 
     # Security Settings
-    secret_key: str = Field("supersecret", env="SECRET_KEY")
+    secret_key: str = Field("your-super-secret-key-here-make-it-very-long-and-secure-32-chars-min", env="SECRET_KEY")
     access_token_expire_minutes: int = Field(60 * 24, env="ACCESS_TOKEN_EXPIRE_MINUTES")
 
     # Rate Limiting
-    rate_limit_requests_per_minute: int = Field(60, env="RATE_LIMIT_REQUESTS_PER_MINUTE")
-    rate_limit_burst_limit: int = Field(10, env="RATE_LIMIT_BURST_LIMIT")
+    rate_limit_requests_per_minute: int = Field(600, env="RATE_LIMIT_REQUESTS_PER_MINUTE")
+    rate_limit_burst_limit: int = Field(100, env="RATE_LIMIT_BURST_LIMIT")
 
     # Security Headers
     enable_hsts: bool = Field(True, env="ENABLE_HSTS")
@@ -42,6 +42,7 @@ class Settings(BaseSettings):
 
     # Data Storage (External to application code)
     data_dir: str = Field("/data", env="DATA_DIR")
+    storage_dir: str = Field("/data", env="STORAGE_DIR")
 
     # ML Model Paths (External data directory)
     user_model_dir: str = Field("/data/user_models", env="USER_MODEL_DIR")
