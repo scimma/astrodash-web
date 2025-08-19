@@ -9,7 +9,7 @@ Process and classify multiple spectra from a single uploaded ZIP file.
 ## Endpoint
 
 ```
-POST /api/batch-process
+POST /api/v1/batch-process
 ```
 
 ## Description
@@ -26,7 +26,7 @@ multipart/form-data
 ### Parameters
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `zip_file` | File | Yes | ZIP file containing spectrum files (FITS, DAT, TXT, LNW) |
+| `zip_file` | File | Yes | ZIP file containing spectrum files (FITS, DAT, TXT, LNW, CSV) |
 | `params` | String (JSON) | No | Processing parameters as JSON string (see `/process` endpoint) |
 
 ## Response
@@ -59,7 +59,7 @@ multipart/form-data
 
 ### cURL
 ```bash
-curl -X POST "http://localhost:5000/api/batch-process" \
+curl -X POST "http://localhost:8000/api/v1/batch-process" \
   -F "zip_file=@spectra.zip" \
   -F 'params={"smoothing": 6}'
 ```
@@ -70,7 +70,7 @@ import requests
 
 files = {'zip_file': open('spectra.zip', 'rb')}
 data = {'params': '{"smoothing": 6}'}
-response = requests.post('http://localhost:5000/api/batch-process', files=files, data=data)
+response = requests.post('http://localhost:8000/api/v1/batch-process', files=files, data=data)
 print(response.json())
 ```
 
@@ -78,3 +78,14 @@ print(response.json())
 - Only supported file types in the ZIP will be processed.
 - Each file's result is keyed by its filename.
 - Use the `/process` endpoint for single spectrum processing.
+
+## Common Errors
+
+- 400: Must provide either `zip_file` or `files`
+  ```json
+  { "detail": "Must provide either zip_file or files parameter." }
+  ```
+- 400: Unsupported file types inside ZIP
+  ```json
+  { "file2.xyz": { "error": "Unsupported file type" } }
+  ```

@@ -44,7 +44,7 @@ class UserClassifier(BaseClassifier):
         Handles cases where input_shape is a list of shapes (e.g., [[1,1024],[1,1024],[1,1]]).
         """
         shape = self.input_shape
-        # Case: list of shapes for multiple inputs
+        # list of shapes for multiple inputs
         if isinstance(shape, (list, tuple)) and shape and isinstance(shape[0], (list, tuple)):
             candidate_lengths = []
             for sub in shape:
@@ -55,7 +55,7 @@ class UserClassifier(BaseClassifier):
                             break
             if candidate_lengths:
                 return int(max(candidate_lengths))
-        # Case: single shape like [batch, seq_len]
+        # single shape like [batch, seq_len]
         if isinstance(shape, (list, tuple)):
             for dim in shape:
                 if isinstance(dim, int) and dim > 1:

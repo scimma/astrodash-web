@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# Getting Started
+# Getting Started (v1 API)
 
 Welcome to the Astrodash API! This guide will help you get up and running with spectrum processing and supernova classification in minutes.
 
@@ -21,7 +21,7 @@ Before you begin, make sure you have:
 First, verify that the API is running:
 
 ```bash
-curl http://localhost:5000/health
+curl http://localhost:8000/health
 ```
 
 You should see:
@@ -34,7 +34,7 @@ You should see:
 Upload a spectrum file for classification:
 
 ```bash
-curl -X POST "http://localhost:5000/process" \
+curl -X POST "http://localhost:8000/api/v1/process" \
   -F "file=@your_spectrum.fits" \
   -F 'params={"smoothing": 6, "knownZ": true, "zValue": 0.5}'
 ```
@@ -48,13 +48,19 @@ The API returns both processed spectrum data and classification results:
   "spectrum": {
     "x": [3500.0, 3501.0, ...],
     "y": [0.1, 0.2, ...],
-    "processed": true
+    "redshift": 0.05
   },
   "classification": {
-    "top_match": "Ia-norm",
-    "confidence": 0.95,
-    "all_matches": [...]
-  }
+    "best_matches": [
+      {
+        "type": "Ia-norm",
+        "confidence": 0.95,
+        "age_bin": "4 to 8"
+      }
+    ],
+    "model_type": "dash_classifier"
+  },
+  "model_type": "dash"
 }
 ```
 
@@ -83,7 +89,7 @@ def process_spectrum(file_path, smoothing=6, known_z=False, z_value=None):
     data = {'params': json.dumps(params)}
 
     # Make the request
-    response = requests.post('http://localhost:5000/process',
+    response = requests.post('http://localhost:8000/api/v1/process',
                            files=files, data=data)
 
     if response.status_code == 200:
@@ -105,8 +111,9 @@ if __name__ == "__main__":
     )
 
     if result:
-        print(f"Top classification: {result['classification']['top_match']}")
-        print(f"Confidence: {result['classification']['confidence']:.2f}")
+        print(f"Top classification: {result['classification']['best_matches'][0]['type']}")
+        print(f"Confidence: {result['classification']['best_matches'][0]['confidence']}")
+        print(f"Age bin: {result['classification']['best_matches'][0]['age_bin']}")
 ```
 
 ## Your First JavaScript Application
@@ -144,7 +151,7 @@ Here's a simple HTML/JavaScript example:
             }));
 
             try {
-                const response = await fetch('http://localhost:5000/process', {
+                const response = await fetch('http://localhost:8000/api/v1/process', {
                     method: 'POST',
                     body: formData
                 });
@@ -153,8 +160,9 @@ Here's a simple HTML/JavaScript example:
 
                 resultDiv.innerHTML = `
                     <h3>Classification Results</h3>
-                    <p><strong>Top Match:</strong> ${result.classification.top_match}</p>
-                    <p><strong>Confidence:</strong> ${(result.classification.confidence * 100).toFixed(1)}%</p>
+                    <p><strong>Top Match:</strong> ${result.classification.best_matches[0].type}</p>
+                    <p><strong>Confidence:</strong> ${(result.classification.best_matches[0].confidence * 100).toFixed(1)}%</p>
+                    <p><strong>Age Bin:</strong> ${result.classification.best_matches[0].age_bin}</p>
                 `;
             } catch (error) {
                 resultDiv.innerHTML = `<p style="color: red;">Error: ${error.message}</p>`;
@@ -164,79 +172,3 @@ Here's a simple HTML/JavaScript example:
 </body>
 </html>
 ```
-
-## Using OSC References
-
-Instead of uploading files, you can use pre-loaded OSC references:
-
-```bash
-curl -X POST "http://localhost:5000/process" \
-  -F 'params={"oscRef": "osc-sn2011fe-0", "smoothing": 4}'
-```
-
-Available OSC references:
-- `osc-sn2002er-0`
-- `osc-sn2011fe-0`
-- `osc-sn2014J-0`
-- `osc-sn1998aq-0`
-- And more...
-
-## Batch Processing
-
-For multiple files, use the batch processing endpoint:
-
-```bash
-curl -X POST "http://localhost:5000/api/batch-process" \
-  -F "zip_file=@spectra.zip" \
-  -F 'params={"smoothing": 6}'
-```
-
-## Understanding Parameters
-
-### Smoothing
-- **Range**: 0-10
-- **Default**: 0
-- **Effect**: Applies median filtering to reduce noise
-
-### Redshift
-- **knownZ**: Whether redshift is known
-- **zValue**: Redshift value (0.0-2.0)
-- **Effect**: Corrects spectrum for cosmological expansion
-
-### Wavelength Range
-- **minWave**: Minimum wavelength in Angstroms
-- **maxWave**: Maximum wavelength in Angstroms
-- **Effect**: Filters spectrum to specific range
-
-## Next Steps
-
-Now that you've processed your first spectrum:
-
-1. **Explore the API**: Check out all available [endpoints](/docs/api/endpoints/health)
-2. **Try Batch Processing**: Process multiple spectra at once
-3. **Experiment with Parameters**: Try different smoothing and redshift values
-4. **Access Templates**: Get template spectra for comparison
-5. **Estimate Redshifts**: Use the redshift estimation endpoint
-
-## Troubleshooting
-
-### Common Issues
-
-**"No spectrum file or OSC reference provided"**
-- Make sure you're uploading a file or providing an OSC reference
-- Check that the file format is supported
-
-**"Classification error: Model not found"**
-- Ensure the API server is running
-- Check that all model files are present
-
-**"File too large"**
-- Reduce file size or use compression
-- Consider using OSC references instead
-
-### Getting Help
-
-- 📚 **Documentation**: This site
-- 🔧 **Interactive API**: [Swagger UI](http://localhost:5000/docs)
-- 🐛 **Issues**: [GitHub Issues](https://github.com/astrodash/astrodash-api/issues)
-- 💬 **Discussions**: [GitHub Discussions](https://github.com/astrodash/astrodash-api/discussions)

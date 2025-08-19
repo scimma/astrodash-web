@@ -9,7 +9,7 @@ Estimate the redshift for a given spectrum and SN type/age.
 ## Endpoint
 
 ```
-POST /api/estimate-redshift
+POST /api/v1/estimate-redshift
 ```
 
 ## Description
@@ -20,16 +20,15 @@ Estimates the redshift of an input spectrum using template matching for a specif
 
 ### Content-Type
 ```
-application/json
+multipart/form-data
 ```
 
-### JSON Body
+### Form Fields
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `x` | Array[float] | Yes | Wavelengths |
-| `y` | Array[float] | Yes | Fluxes |
-| `type` | String | Yes | SN type (e.g., "Ia-norm") |
-| `age` | String | Yes | Age bin (e.g., "4 to 8") |
+| `file` | File | Yes | Spectrum file (.dat, .txt, .lnw) |
+| `sn_type` | String | Yes | SN type (e.g., "Ia") |
+| `age_bin` | String | Yes | Age bin (e.g., "2 to 6") |
 
 ## Response
 
@@ -49,27 +48,32 @@ application/json
 ### Python
 ```python
 import requests
-import numpy as np
 
-wavelengths = np.linspace(3500, 10000, 1000)
-fluxes = np.random.normal(1.0, 0.1, 1000)
-data = {
-    'x': wavelengths.tolist(),
-    'y': fluxes.tolist(),
-    'type': 'Ia-norm',
-    'age': '4 to 8'
-}
-response = requests.post('http://localhost:5000/api/estimate-redshift', json=data)
+files = {'file': open('spectrum.dat', 'rb')}
+data = {'sn_type': 'Ia', 'age_bin': '2 to 6'}
+response = requests.post('http://localhost:8000/api/v1/estimate-redshift', files=files, data=data)
 print(response.json())
 ```
 
 ### cURL
 ```bash
-curl -X POST "http://localhost:5000/api/estimate-redshift" \
-  -H "Content-Type: application/json" \
-  -d '{"x": [3500, 3501, ...], "y": [0.1, 0.2, ...], "type": "Ia-norm", "age": "4 to 8"}'
+curl -X POST "http://localhost:8000/api/v1/estimate-redshift" \
+  -F "file=@spectrum.dat" \
+  -F "sn_type=Ia" \
+  -F "age_bin=2 to 6"
 ```
 
 ## Notes
-- Use `/api/analysis-options` to get valid SN types and age bins.
+- Use `/api/v1/analysis-options` to get valid SN types and age bins.
+
+## Common Errors
+
+- 422: File required
+  ```json
+  { "detail": "File upload is required for redshift estimation." }
+  ```
+- 404: Unknown type/age combination
+  ```json
+  { "detail": "Template not found for SN type 'Ia' and age bin '2 to 6'." }
+  ```
 - The `message` field is present if no valid templates are found.

@@ -9,7 +9,7 @@ Get available SN types and age bins for analysis.
 ## Endpoint
 
 ```
-GET /api/analysis-options
+GET /api/v1/analysis-options
 ```
 
 ## Description
@@ -48,15 +48,22 @@ No parameters required.
 
 ### cURL
 ```bash
-curl -X GET "http://localhost:5000/api/analysis-options"
+curl -X GET "http://localhost:8000/api/v1/analysis-options"
 ```
 
 ### Python
 ```python
 import requests
-response = requests.get('http://localhost:5000/api/analysis-options')
+response = requests.get('http://localhost:8000/api/v1/analysis-options')
 print(response.json())
 ```
 
 ## Notes
-- Use these SN types and age bins as valid values for other endpoints (e.g., `/api/template-spectrum`).
+- Use these SN types and age bins as valid values for other endpoints (e.g., `/api/v1/template-spectrum`).
+
+## Common Errors
+
+- 500: Configuration error (template file missing)
+  ```json
+  { "detail": "Failed to fetch analysis options: ..." }
+  ```

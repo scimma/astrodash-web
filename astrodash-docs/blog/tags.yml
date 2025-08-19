@@ -1,19 +1,109 @@
-facebook:
-  label: Facebook
-  permalink: /facebook
-  description: Facebook tag description
+# Blog tags configuration
+# Add relevant tags for your blog posts when you start blogging
 
-hello:
-  label: Hello
-  permalink: /hello
-  description: Hello tag description
+# API and Development
+api:
+  label: API
+  permalink: /api
+  description: API-related blog posts and updates
 
-docusaurus:
-  label: Docusaurus
-  permalink: /docusaurus
-  description: Docusaurus tag description
+backend:
+  label: Backend
+  permalink: /backend
+  description: Backend development and architecture
 
-hola:
-  label: Hola
-  permalink: /hola
-  description: Hola tag description
+fastapi:
+  label: FastAPI
+  permalink: /fastapi
+  description: FastAPI framework and best practices
+
+# Astronomy and Astrophysics
+astronomy:
+  label: Astronomy
+  permalink: /astronomy
+  description: Astronomy and astrophysics content
+
+spectroscopy:
+  label: Spectroscopy
+  permalink: /spectroscopy
+  description: Spectral analysis and processing
+
+redshift:
+  label: Redshift
+  permalink: /redshift
+  description: Redshift estimation and analysis
+
+# Machine Learning and AI
+machine-learning:
+  label: Machine Learning
+  permalink: /machine-learning
+  description: ML and AI related content
+
+classification:
+  label: Classification
+  permalink: /classification
+  description: Spectrum classification algorithms
+
+neural-networks:
+  label: Neural Networks
+  permalink: /neural-networks
+  description: Deep learning and neural network applications
+
+# Technical Topics
+performance:
+  label: Performance
+  permalink: /performance
+  description: Performance optimization and monitoring
+
+security:
+  label: Security
+  permalink: /security
+  description: Security best practices and implementations
+
+deployment:
+  label: Deployment
+  permalink: /deployment
+  description: Deployment strategies and DevOps
+
+# Data and Processing
+data-processing:
+  label: Data Processing
+  permalink: /data-processing
+  description: Data processing workflows and techniques
+
+batch-processing:
+  label: Batch Processing
+  permalink: /batch-processing
+  description: Batch processing strategies and optimization
+
+file-formats:
+  label: File Formats
+  permalink: /file-formats
+  description: Spectrum file format support and handling
+
+# Integration and Use Cases
+integration:
+  label: Integration
+  permalink: /integration
+  description: API integration examples and tutorials
+
+use-cases:
+  label: Use Cases
+  permalink: /use-cases
+  description: Real-world applications and use cases
+
+tutorials:
+  label: Tutorials
+  permalink: /tutorials
+  description: Step-by-step guides and tutorials
+
+# Updates and News
+updates:
+  label: Updates
+  permalink: /updates
+  description: API updates and new features
+
+releases:
+  label: Releases
+  permalink: /releases
+  description: Release notes and announcements

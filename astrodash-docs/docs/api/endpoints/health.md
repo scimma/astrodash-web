@@ -9,6 +9,7 @@ Check the health status of the Astrodash API.
 ## Endpoint
 
 ```
+GET /
 GET /health
 ```
 
@@ -37,7 +38,7 @@ No parameters required.
 ### cURL
 
 ```bash
-curl -X GET "http://localhost:5000/health"
+curl -X GET "http://localhost:8000/health"
 ```
 
 ### Python
@@ -45,18 +46,17 @@ curl -X GET "http://localhost:5000/health"
 ```python
 import requests
 
-response = requests.get("http://localhost:5000/health")
+response = requests.get("http://localhost:8000/health")
 print(response.json())
-# Output: {'status': 'healthy'}
+# Output: {'status': 'healthy', ...}
 ```
 
 ### JavaScript
 
 ```javascript
-fetch('http://localhost:5000/health')
+fetch('http://localhost:8000/health')
   .then(response => response.json())
   .then(data => console.log(data));
-// Output: {status: 'healthy'}
 ```
 
 ## Use Cases

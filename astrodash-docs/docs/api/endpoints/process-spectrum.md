@@ -9,7 +9,7 @@ Process and classify a single spectrum file or OSC reference.
 ## Endpoint
 
 ```
-POST /process
+POST /api/v1/process
 ```
 
 ## Description
@@ -28,7 +28,7 @@ multipart/form-data
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | File | No* | Spectrum file to upload (FITS, DAT, TXT, or LNW format) |
+| `file` | File | No* | Spectrum file to upload (FITS, DAT, TXT, LNW, or CSV) |
 | `params` | String (JSON) | No | Processing parameters as JSON string |
 
 *Either `file` or `oscRef` in params is required.
@@ -58,16 +58,10 @@ The `params` parameter accepts a JSON string with the following fields:
   "spectrum": {
     "x": [3500.0, 3501.0, ...],
     "y": [0.1, 0.2, ...],
-    "processed": true,
-    "smoothing": 6,
-    "z_value": 0.5,
-    "min_wave": 3500.0,
-    "max_wave": 10000.0
+    "redshift": 0.05
   },
   "classification": {
-    "top_match": "Ia-norm",
-    "confidence": 0.95,
-    "all_matches": [
+    "best_matches": [
       {
         "type": "Ia-norm",
         "confidence": 0.95,
@@ -79,11 +73,9 @@ The `params` parameter accepts a JSON string with the following fields:
         "age_bin": "2 to 6"
       }
     ],
-    "rlap_values": {
-      "Ia-norm": 0.85,
-      "Ia-91T": 0.12
-    }
-  }
+    "model_type": "dash_classifier"
+  },
+  "model_type": "dash"
 }
 ```
 
@@ -112,7 +104,7 @@ The `params` parameter accepts a JSON string with the following fields:
 #### cURL
 
 ```bash
-curl -X POST "http://localhost:5000/process" \
+curl -X POST "http://localhost:8000/api/v1/process" \
   -F "file=@spectrum.fits" \
   -F 'params={"smoothing": 6, "knownZ": true, "zValue": 0.5, "calculateRlap": true}'
 ```
@@ -127,10 +119,11 @@ data = {
     'params': '{"smoothing": 6, "knownZ": true, "zValue": 0.5}'
 }
 
-response = requests.post('http://localhost:5000/process',
+response = requests.post('http://localhost:8000/api/v1/process',
                         files=files, data=data)
 result = response.json()
-print(f"Top match: {result['classification']['top_match']}")
+print(f"Top match: {result['classification']['best_matches'][0]['type']}")
+print(f"Confidence: {result['classification']['best_matches'][0]['confidence']:.2f}")
 ```
 
 #### JavaScript
@@ -144,7 +137,7 @@ formData.append('params', JSON.stringify({
   zValue: 0.5
 }));
 
-fetch('http://localhost:5000/process', {
+fetch('http://localhost:8000/api/v1/process', {
   method: 'POST',
   body: formData
 })
@@ -157,7 +150,7 @@ fetch('http://localhost:5000/process', {
 #### cURL
 
 ```bash
-curl -X POST "http://localhost:5000/process" \
+curl -X POST "http://localhost:8000/api/v1/process" \
   -F 'params={"oscRef": "osc-sn2011fe-0", "smoothing": 4}'
 ```
 
@@ -170,7 +163,7 @@ data = {
     'params': '{"oscRef": "osc-sn2011fe-0", "smoothing": 4}'
 }
 
-response = requests.post('http://localhost:5000/process', data=data)
+response = requests.post('http://localhost:8000/api/v1/process', data=data)
 result = response.json()
 ```
 
@@ -199,6 +192,21 @@ The classification includes:
 
 - **File Size Limit**: 50MB per file
 - **Processing Time**: 1-5 seconds depending on spectrum complexity
-- **Supported Formats**: FITS, DAT, TXT, LNW
+- **Supported Formats**: FITS, DAT, TXT, LNW, CSV
 - **Wavelength Range**: 3500-10000 Angstroms (configurable)
 - **Redshift Range**: 0.0-2.0 (for known redshifts)
+
+## Common Errors
+
+- 400: Unsupported file format
+  ```json
+  { "detail": "Unsupported file format: .foo. Supported formats: FITS, DAT, TXT, LNW, CSV" }
+  ```
+- 400: No valid spectrum data found
+  ```json
+  { "detail": "No valid spectrum data found in file" }
+  ```
+- 422: Validation error (missing or malformed `params`)
+  ```json
+  { "detail": "Validation failed." }
+  ```

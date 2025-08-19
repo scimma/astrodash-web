@@ -175,7 +175,6 @@ def compute_rlap_for_matches(matches, best_match, log_wave, input_flux_log, temp
     sn_type = best['type']
     age = best['age']
     # Find the correct template(s) for this type/age
-    # (Assume template_fluxes, template_names, template_minmax_indexes are already filtered for the best match)
     input_minmax_index = get_nonzero_minmax(input_flux_log)
     rlap_label, used_redshift, rlap_warning = calculate_rlap_with_redshift(
         log_wave, input_flux_log, template_fluxes, template_names, template_minmax_indexes, input_minmax_index,
@@ -199,8 +198,6 @@ def prepare_log_wavelength_and_templates(spectrum, template_filename=None):
     dwlog = np.log(w1 / w0) / nw
     log_wave = w0 * np.exp(np.arange(nw) * dwlog)
 
-    # Obtain templates via the factory-backed template handler
-    # Support optional override of template path when a specific filename is provided
     handler_template_path = None
     if template_filename is not None:
         settings = get_settings()

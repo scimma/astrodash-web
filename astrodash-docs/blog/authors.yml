@@ -1,25 +1,22 @@
-yangshun:
-  name: Yangshun Tay
-  title: Ex-Meta Staff Engineer, Co-founder GreatFrontEnd
-  url: https://linkedin.com/in/yangshun
-  image_url: https://github.com/yangshun.png
+# Blog authors configuration
+# Add your team members or contributors here when you start blogging
+
+jesusca:
+  name: Jesús Caraballo
+  title: AstroDash Developer & Maintainer
+  url: https://github.com/jesusCaraball0
+  image_url: https://github.com/jesusCaraball0.png
   page: true
   socials:
-    x: yangshunz
-    linkedin: yangshun
-    github: yangshun
-    newsletter: https://www.greatfrontend.com
+    github: jesusCaraball0
 
-slorber:
-  name: Sébastien Lorber
-  title: Docusaurus maintainer
-  url: https://sebastienlorber.com
-  image_url: https://github.com/slorber.png
-  page:
-    # customize the url of the author page at /blog/authors/<permalink>
-    permalink: '/all-sebastien-lorber-articles'
-  socials:
-    x: sebastienlorber
-    linkedin: sebastienlorber
-    github: slorber
-    newsletter: https://thisweekinreact.com
+# Example author structure for future team members:
+# yourname:
+#   name: Your Name
+#   title: Your Title
+#   url: https://yourwebsite.com
+#   image_url: https://github.com/yourusername.png
+#   page: true
+#   socials:
+#     github: yourusername
+#     linkedin: yourusername

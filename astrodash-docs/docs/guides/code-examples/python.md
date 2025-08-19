@@ -2,7 +2,7 @@
 sidebar_position: 1
 ---
 
-# Python Examples
+# Python Examples (v1 API)
 
 Complete Python examples for using the Astrodash API.
 
@@ -38,7 +38,7 @@ def process_spectrum(file_path, smoothing=6, known_z=False, z_value=None):
 
     data = {'params': json.dumps(params)}
 
-    response = requests.post('http://localhost:5000/process',
+    response = requests.post('http://localhost:8000/api/v1/process',
                            files=files, data=data)
 
     if response.status_code == 200:
@@ -57,8 +57,9 @@ result = process_spectrum(
 )
 
 if result:
-    print(f"Top classification: {result['classification']['top_match']}")
-    print(f"Confidence: {result['classification']['confidence']:.2f}")
+    print(f"Top classification: {result['classification']['best_matches'][0]['type']}")
+    print(f"Confidence: {result['classification']['best_matches'][0]['confidence']:.2f}")
+    print(f"Age bin: {result['classification']['best_matches'][0]['age_bin']}")
 ```
 
 ### Plot the Results
@@ -81,7 +82,7 @@ def plot_spectrum_result(result):
     ax1.grid(True, alpha=0.3)
 
     # Plot classification results
-    matches = classification['all_matches']
+    matches = classification['best_matches']
     types = [match['type'] for match in matches]
     confidences = [match['confidence'] for match in matches]
 
@@ -92,10 +93,13 @@ def plot_spectrum_result(result):
     ax2.tick_params(axis='x', rotation=45)
 
     # Highlight top match
-    top_match = classification['top_match']
-    for i, (bar, sn_type) in enumerate(zip(bars, types)):
-        if sn_type == top_match:
-            bar.set_color('red')
+    top_match = classification['best_matches'][0]['type']
+    confidence = classification['best_matches'][0]['confidence']
+
+    if sn_type == top_match:
+        for i, (bar, sn_type) in enumerate(zip(bars, types)):
+            if sn_type == top_match:
+                bar.set_color('red')
 
     plt.tight_layout()
     plt.show()
@@ -121,7 +125,7 @@ def process_osc_reference(osc_ref, smoothing=6):
 
     data = {'params': json.dumps(params)}
 
-    response = requests.post('http://localhost:5000/process', data=data)
+    response = requests.post('http://localhost:8000/api/v1/process', data=data)
 
     if response.status_code == 200:
         return response.json()
@@ -133,7 +137,9 @@ def process_osc_reference(osc_ref, smoothing=6):
 # Example usage
 result = process_osc_reference("osc-sn2011fe-0", smoothing=4)
 if result:
-    print(f"OSC spectrum classified as: {result['classification']['top_match']}")
+    print(f"OSC spectrum classified as: {result['classification']['best_matches'][0]['type']}")
+    print(f"Confidence: {result['classification']['best_matches'][0]['confidence']:.2f}")
+    print(f"Age bin: {result['classification']['best_matches'][0]['age_bin']}")
 ```
 
 ## Batch Processing
@@ -160,7 +166,7 @@ def batch_process_spectra(zip_path, smoothing=6):
     files = {'zip_file': open(zip_path, 'rb')}
     data = {'params': json.dumps({'smoothing': smoothing})}
 
-    response = requests.post('http://localhost:5000/api/batch-process',
+    response = requests.post('http://localhost:8000/api/v1/batch-process',
                            files=files, data=data)
 
     if response.status_code == 200:
@@ -178,7 +184,9 @@ results = batch_process_spectra(zip_path, smoothing=6)
 if results:
     for filename, result in results.items():
         if 'error' not in result:
-            print(f"{filename}: {result['classification']['top_match']}")
+            print(f"{filename}: {result['classification']['best_matches'][0]['type']}")
+            print(f"  Confidence: {result['classification']['best_matches'][0]['confidence']:.2f}")
+            print(f"  Age bin: {result['classification']['best_matches'][0]['age_bin']}")
         else:
             print(f"{filename}: Error - {result['error']}")
 ```
@@ -197,7 +205,7 @@ def get_template_spectrum(sn_type="Ia-norm", age_bin="4 to 8"):
         'age_bin': age_bin
     }
 
-    response = requests.get('http://localhost:5000/api/template-spectrum',
+    response = requests.get('http://localhost:8000/api/v1/template-spectrum',
                           params=params)
 
     if response.status_code == 200:
@@ -272,7 +280,7 @@ def estimate_redshift(wavelengths, fluxes, sn_type="Ia-norm", age="4 to 8"):
         'age': age
     }
 
-    response = requests.post('http://localhost:5000/api/estimate-redshift',
+    response = requests.post('http://localhost:8000/api/v1/estimate-redshift',
                            json=data)
 
     if response.status_code == 200:
@@ -304,7 +312,7 @@ def get_analysis_options():
     """
     Get available SN types and age bins.
     """
-    response = requests.get('http://localhost:5000/api/analysis-options')
+    response = requests.get('http://localhost:8000/api/v1/analysis-options')
 
     if response.status_code == 200:
         return response.json()
@@ -336,7 +344,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class AstrodashAPI:
-    def __init__(self, base_url="http://localhost:5000"):
+    def __init__(self, base_url="http://localhost:8000"):
         self.base_url = base_url
 
     def health_check(self):
@@ -349,13 +357,13 @@ class AstrodashAPI:
         files = {'file': open(file_path, 'rb')}
         data = {'params': json.dumps(params)}
 
-        response = requests.post(f"{self.base_url}/process", files=files, data=data)
+        response = requests.post(f"{self.base_url}/api/v1/process", files=files, data=data)
         return response.json() if response.status_code == 200 else None
 
     def get_template(self, sn_type, age_bin):
         """Get template spectrum."""
         params = {'sn_type': sn_type, 'age_bin': age_bin}
-        response = requests.get(f"{self.base_url}/api/template-spectrum", params=params)
+        response = requests.get(f"{self.base_url}/api/v1/template-spectrum", params=params)
         return response.json() if response.status_code == 200 else None
 
     def estimate_redshift(self, wavelengths, fluxes, sn_type, age):
@@ -366,7 +374,7 @@ class AstrodashAPI:
             'type': sn_type,
             'age': age
         }
-        response = requests.post(f"{self.base_url}/api/estimate-redshift", json=data)
+        response = requests.post(f"{self.base_url}/api/v1/estimate-redshift", json=data)
         return response.json() if response.status_code == 200 else None
 
 # Usage example

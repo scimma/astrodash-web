@@ -35,13 +35,49 @@ img[alt="Astrodash Logo"] {
   margin-bottom: 1em;
 }
 
+/* Navbar styling for better visibility */
+.navbar {
+  background: var(--ifm-navbar-background-color);
+}
+
+/* Ensure navbar title is clearly visible */
+.navbar__title {
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+/* Ensure all navbar items are clearly visible */
+.navbar__item {
+  color: #ffffff !important;
+}
+
+.navbar__link {
+  color: #ffffff !important;
+  font-weight: 500;
+}
+
+.navbar__link:hover {
+  color: var(--ifm-color-primary-light) !important;
+  text-decoration: none;
+}
+
+/* Active navbar link styling */
+.navbar__link--active {
+  color: var(--ifm-color-primary-light) !important;
+  font-weight: 600;
+}
+
+/* Dropdown menu styling */
+.dropdown__link {
+  color: #ffffff !important;
+}
+
+.dropdown__link:hover {
+  color: var(--ifm-color-primary-light) !important;
+}
+
 /* Optional: Make sidebar headings bold and purple */
 .menu__link--sublist {
   font-weight: bold;
   color: var(--ifm-color-primary);
-}
-
-/* Optional: Add a subtle background to the navbar */
-.navbar {
-  background: var(--ifm-navbar-background-color);
 }

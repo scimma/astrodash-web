@@ -21,6 +21,41 @@ const sidebars: SidebarsConfig = {
       label: 'Introduction',
     },
     {
+      type: 'doc',
+      id: 'api/architecture-overview',
+      label: 'Architecture Overview',
+    },
+    {
+      type: 'doc',
+      id: 'api/errors',
+      label: 'Error Model',
+    },
+    {
+      type: 'doc',
+      id: 'api/security',
+      label: 'Security & Authentication',
+    },
+    {
+      type: 'doc',
+      id: 'api/advanced-usage',
+      label: 'Advanced Usage Patterns',
+    },
+    {
+      type: 'doc',
+      id: 'api/integration-examples',
+      label: 'Integration Examples',
+    },
+    {
+      type: 'doc',
+      id: 'api/troubleshooting',
+      label: 'Troubleshooting & Debugging',
+    },
+    {
+      type: 'doc',
+      id: 'api/data-formats',
+      label: 'Data Formats & Schemas',
+    },
+    {
       type: 'category',
       label: 'Endpoints',
       items: [
@@ -30,8 +65,8 @@ const sidebars: SidebarsConfig = {
         'api/endpoints/analysis-options',
         'api/endpoints/template-spectrum',
         'api/endpoints/estimate-redshift',
-        // 'api/endpoints/line-list',
-        'api/endpoints/osc-references',
+        'api/endpoints/line-list',
+        'api/endpoints/models',
       ],
     },
   ],

@@ -45,7 +45,7 @@ const config: Config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/astrodash/astrodash-api/tree/main/docs/',
+            'https://github.com/jesusCaraball0/astrodash-web/tree/master/astrodash-docs/',
         },
         blog: {
           showReadingTime: true,
@@ -56,7 +56,7 @@ const config: Config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/astrodash/astrodash-api/tree/main/blog/',
+            'https://github.com/jesusCaraball0/astrodash-web/tree/master/astrodash-docs/',
           // Useful options to enforce blogging best practices
           onInlineTags: 'warn',
           onInlineAuthors: 'warn',
@@ -93,12 +93,12 @@ const config: Config = {
         },
         {to: '/blog', label: 'Blog', position: 'left'},
         {
-          href: 'https://github.com/astrodash/astrodash-api',
+          href: 'https://github.com/jesusCaraball0/astrodash-web',
           label: 'GitHub',
           position: 'right',
         },
         {
-          href: 'http://localhost:5000/docs',
+          href: 'http://localhost:8000/docs',
           label: 'Interactive API',
           position: 'right',
         },
@@ -129,11 +129,11 @@ const config: Config = {
           items: [
             {
               label: 'GitHub Issues',
-              href: 'https://github.com/astrodash/astrodash-api/issues',
+              href: 'https://github.com/jesusCaraball0/astrodash-web/issues',
             },
             {
               label: 'Discussions',
-              href: 'https://github.com/astrodash/astrodash-api/discussions',
+              href: 'https://github.com/jesusCaraball0/astrodash-web/discussions',
             },
           ],
         },
@@ -146,11 +146,11 @@ const config: Config = {
             },
             {
               label: 'GitHub',
-              href: 'https://github.com/astrodash/astrodash-api',
+              href: 'https://github.com/jesusCaraball0/astrodash-web',
             },
             {
               label: 'Interactive API',
-              href: 'http://localhost:5000/docs',
+              href: 'http://localhost:8000/docs',
             },
           ],
         },

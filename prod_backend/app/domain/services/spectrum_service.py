@@ -43,7 +43,7 @@ class SpectrumService:
     async def get_spectrum_from_osc(self, osc_ref: str) -> Spectrum:
         logger.info(f"Spectrum service: Starting to get spectrum for OSC reference: {osc_ref}")
 
-        # 1) Try database first (avoid re-fetching the same OSC spectrum)
+        # Fetch from DB if stored
         try:
             db_spectrum = await asyncio.to_thread(self.db_repo.get_by_osc_ref, osc_ref)
         except Exception as e:
@@ -62,7 +62,7 @@ class SpectrumService:
                 )
             return db_spectrum
 
-        # 2) Fallback to OSC repository if not in DB
+        # Fallback to OSC repository
         logger.info(f"Spectrum service: Not found in DB. Fetching from OSC for {osc_ref}")
         spectrum = await asyncio.to_thread(self.osc_repo.get_by_osc_ref, osc_ref)
         logger.info(f"Spectrum service: OSC repository returned spectrum: {spectrum}")

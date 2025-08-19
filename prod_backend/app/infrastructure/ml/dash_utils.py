@@ -83,7 +83,7 @@ class AgeBinning:
         return age_labels
 
 class CreateLabels:
-    """Create classification labels for Dash model."""
+    '''Create classification labels for Dash model'''
     def __init__(self, n_types: int, min_age: float, max_age: float, age_bin_size: float, type_list: List[str]):
         self.n_types = n_types
         self.age_binning = AgeBinning(min_age, max_age, age_bin_size)
@@ -99,7 +99,7 @@ class CreateLabels:
         return np.array(type_names_list)
 
 class LoadInputSpectra:
-    """Load and process input spectra for Dash classification."""
+    '''Load and process input spectra for Dash classification'''
     def __init__(
         self,
         file_path_or_data: Union[str, Any],
@@ -137,7 +137,7 @@ class LoadInputSpectra:
         return input_images, [self.z], self.type_names_list, int(self.nw), self.n_bins, [(self.min_index, self.max_index)]
 
 class BestTypesListSingleRedshift:
-    """Get best classification types using the Dash PyTorch model."""
+    '''Get best classification types using the Dash PyTorch model'''
     def __init__(
         self,
         model_path: str,
