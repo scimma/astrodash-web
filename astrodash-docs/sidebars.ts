@@ -83,6 +83,11 @@ const sidebars: SidebarsConfig = {
         'guides/code-examples/python',
       ],
     },
+    {
+      type: 'doc',
+      id: 'guides/contribute',
+      label: 'Contribute',
+    },
   ],
 };
 

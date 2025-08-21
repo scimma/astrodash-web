@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🗄️ Initializing database..."
+echo "Initializing database..."
 
 # Activate the conda environment
 source ~/micromamba/etc/profile.d/micromamba.sh
@@ -10,4 +10,4 @@ micromamba activate astroweb
 echo "Running database migrations..."
 alembic upgrade head
 
-echo "✅ Database initialization complete!"
+echo "Database initialization complete!"
