@@ -385,7 +385,7 @@ const BatchPage: React.FC = () => {
                   size="small"
                   value={zValue}
                   onChange={(e) => setZValue(e.target.value)}
-                  label="Redshift Value"
+                  label="Redshift"
                   sx={{ ml: 2, width: 120,
                     '& .MuiInputBase-input': { color: 'white' },
                     '& .MuiOutlinedInput-root': {

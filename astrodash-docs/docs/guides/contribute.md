@@ -131,3 +131,91 @@ This section explains how to add a first‑class model kind (e.g., like `dash` o
 - Keep the backend response shape consistent across models to minimize frontend changes.
 - Mirror your training preprocessing exactly; subtle differences in interpolation or normalization can degrade performance.
 - Use `torch.device('cuda' if available else 'cpu')` and move tensors/models with `.to(device)` to support both CPU and GPU.
+
+## Add new spectral templates
+
+This section explains how to add new spectral templates for supernova types and age bins to enhance DASH model performance and enable redshift estimation for additional SN classes.
+
+### Overview
+
+Spectral templates are essential for:
+- **RLAP calculation**: Measuring the quality of spectral matches
+- **Redshift estimation**: Determining cosmological distances using template matching
+- **Template overlays**: Visual comparison between observed and template spectra
+
+### Template format requirements
+
+Templates must follow the DASH format specification:
+
+1. **File structure**: Templates are stored in `.npz` format containing:
+   - `snTemplates`: Dictionary with SN types as keys
+   - Each SN type contains age bins as sub-keys
+   - Each age bin contains wavelength arrays and flux arrays
+
+2. **Data format**:
+   - Wavelength arrays: Log-wavelength grid (typically 32-64 points)
+   - Flux arrays: Normalized flux values (typically 32-64 points)
+   - Age bins: Standardized format (e.g., "2 to 6", "6 to 10", "10 to 15")
+
+### Adding templates for a new SN class
+
+#### Step 1: Prepare template data
+
+1. **Collect spectra**: Gather high-quality spectra for the new SN type across multiple age bins
+2. **Normalize data**: Ensure all spectra are flux-normalized and on a consistent wavelength grid
+3. **Age binning**: Group spectra into standard age bins (2-6 days, 6-10 days, 10-15 days, etc.)
+4. **Quality control**: Remove spectra with poor signal-to-noise or calibration issues
+
+#### Step 2: Convert to DASH format
+
+1. **Wavelength grid**: Interpolate all spectra to the standard DASH log-wavelength grid
+2. **Flux normalization**: Apply consistent flux normalization across all templates
+3. **Data structure**: Organize into the nested dictionary format expected by DASH
+
+#### Step 3: Integration
+
+1. **File placement**: Add templates to `prod_backend/app/astrodash_models/sn_and_host_templates.npz`
+2. **Template factory**: Update `prod_backend/app/infrastructure/ml/templates/template_factory.py` if needed
+3. **Validation**: Ensure templates are loaded correctly by the DASH classifier
+
+### Template validation and testing
+
+1. **Load test**: Verify templates load without errors in the DASH classifier
+2. **RLAP test**: Confirm RLAP calculations work with new templates
+3. **Redshift test**: Test redshift estimation using the new templates
+4. **Visual verification**: Check template overlays in the web interface
+
+### Best practices
+
+- **Consistency**: Maintain consistent wavelength grids and flux normalization
+- **Coverage**: Ensure adequate coverage across age bins for reliable classification
+- **Quality**: Use only high-quality, well-calibrated spectra as templates
+- **Documentation**: Document the source and properties of new templates
+- **Versioning**: Keep track of template versions and updates
+
+### Example template structure
+
+```python
+# Example of how templates are structured in the .npz file
+snTemplates = {
+    'Ia': {
+        '2 to 6': {
+            'wavelengths': [...],  # Log-wavelength grid
+            'fluxes': [...]        # Normalized flux values
+        },
+        '6 to 10': {
+            'wavelengths': [...],
+            'fluxes': [...]
+        }
+    },
+    'Ib': {
+        # Similar structure for Ib templates
+    }
+}
+```
+
+### Troubleshooting
+
+- **Template not found**: Check file paths and template loading in the classifier
+- **RLAP calculation errors**: Verify template format and wavelength grid consistency
+- **Poor redshift estimates**: Ensure templates have sufficient spectral features for cross-correlation
