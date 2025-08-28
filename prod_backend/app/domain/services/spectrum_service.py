@@ -23,9 +23,9 @@ class SpectrumService:
         self.settings = settings or get_settings()
 
     async def get_spectrum_from_file(self, file: Any) -> Spectrum:
-        logger.info(f"Getting spectrum from file: {getattr(file, 'filename', 'unknown')}")
+        logger.debug(f"Getting spectrum from file: {getattr(file, 'filename', 'unknown')}")
         spectrum = await asyncio.to_thread(self.file_repo.get_from_file, file)
-        logger.info(f"Repository returned spectrum: {spectrum}")
+        logger.debug(f"Repository returned spectrum: {spectrum}")
 
         if not spectrum:
             logger.error("Repository returned None spectrum")
@@ -33,7 +33,7 @@ class SpectrumService:
 
         try:
             validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
-            logger.info("Spectrum validation passed")
+            logger.debug("Spectrum validation passed")
         except Exception as e:
             logger.error(f"Spectrum validation failed: {e}")
             raise SpectrumValidationException("Invalid or unreadable spectrum file.")
@@ -41,20 +41,20 @@ class SpectrumService:
         return spectrum
 
     async def get_spectrum_from_osc(self, osc_ref: str) -> Spectrum:
-        logger.info(f"Spectrum service: Starting to get spectrum for OSC reference: {osc_ref}")
+        logger.debug(f"Spectrum service: Starting to get spectrum for OSC reference: {osc_ref}")
 
         # Fetch from DB if stored
         try:
             db_spectrum = await asyncio.to_thread(self.db_repo.get_by_osc_ref, osc_ref)
         except Exception as e:
-            logger.warning(f"Spectrum service: DB lookup by osc_ref failed: {e}")
+            logger.debug(f"Spectrum service: DB lookup by osc_ref failed: {e}")
             db_spectrum = None
 
         if db_spectrum:
-            logger.info(f"Spectrum service: Found spectrum in DB for {osc_ref}: {db_spectrum.id}")
+            logger.debug(f"Spectrum service: Found spectrum in DB for {osc_ref}: {db_spectrum.id}")
             try:
                 validate_spectrum(db_spectrum.x, db_spectrum.y, db_spectrum.redshift)
-                logger.info(f"Spectrum service: Successfully validated DB spectrum for {osc_ref}")
+                logger.debug(f"Spectrum service: Successfully validated DB spectrum for {osc_ref}")
             except Exception as e:
                 logger.error(f"Spectrum service: Stored spectrum validation failed for {osc_ref}: {e}")
                 raise OSCServiceException(
@@ -63,9 +63,9 @@ class SpectrumService:
             return db_spectrum
 
         # Fallback to OSC repository
-        logger.info(f"Spectrum service: Not found in DB. Fetching from OSC for {osc_ref}")
+        logger.debug(f"Spectrum service: Not found in DB. Fetching from OSC for {osc_ref}")
         spectrum = await asyncio.to_thread(self.osc_repo.get_by_osc_ref, osc_ref)
-        logger.info(f"Spectrum service: OSC repository returned spectrum: {spectrum}")
+        logger.debug(f"Spectrum service: OSC repository returned spectrum: {spectrum}")
 
         if not spectrum:
             logger.error(f"Spectrum service: OSC repository returned None spectrum for {osc_ref}")
@@ -73,7 +73,7 @@ class SpectrumService:
 
         try:
             validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
-            logger.info(f"Spectrum service: Successfully retrieved and validated OSC spectrum for {osc_ref}")
+            logger.debug(f"Spectrum service: Successfully retrieved and validated OSC spectrum for {osc_ref}")
         except Exception as e:
             logger.error(f"Spectrum service: Spectrum validation failed for {osc_ref}: {e}")
             raise OSCServiceException(f"Could not retrieve valid spectrum data from OSC for reference: {osc_ref}. The spectrum may not exist or the OSC API may be unavailable.")
@@ -99,12 +99,12 @@ class SpectrumService:
         """
         try:
             if file:
-                logger.info(f"Processing uploaded file: {getattr(file, 'filename', 'unknown')}")
+                logger.debug(f"Processing uploaded file: {getattr(file, 'filename', 'unknown')}")
                 # Validate file extension (now supports .fits as well)
                 validate_file_extension(getattr(file, 'filename', ''), [".dat", ".lnw", ".txt", ".fits"])
                 return await self.get_spectrum_from_file(file)
             elif osc_ref:
-                logger.info(f"Processing OSC reference: {osc_ref}")
+                logger.debug(f"Processing OSC reference: {osc_ref}")
                 return await self.get_spectrum_from_osc(osc_ref)
             else:
                 raise ValidationException("No spectrum file or OSC reference provided")
@@ -128,7 +128,7 @@ class SpectrumService:
             SpectrumValidationException: If spectrum validation fails
         """
         try:
-            logger.info(f"Saving spectrum {spectrum.id} to database")
+            logger.debug(f"Saving spectrum {spectrum.id} to database")
 
             # Validate spectrum before saving
             validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
@@ -136,7 +136,7 @@ class SpectrumService:
             # Save to database using async wrapper
             saved_spectrum = await asyncio.to_thread(self.db_repo.save, spectrum)
 
-            logger.info(f"Successfully saved spectrum {spectrum.id} to database")
+            logger.debug(f"Successfully saved spectrum {spectrum.id} to database")
             return saved_spectrum
 
         except Exception as e:

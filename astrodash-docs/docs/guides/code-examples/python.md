@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Python Examples (v1 API)
 
-Complete Python examples for using the Astrodash API.
+Complete Python examples for using the AstroDASH 2.0 API.
 
 ## Setup
 

@@ -25,7 +25,7 @@ class SpectrumProcessingService:
         self.transformer_processor = TransformerSpectrumProcessor(
             target_length=self.settings.nw
         )
-        logger.info("SpectrumProcessingService initialized with settings")
+        logger.debug("SpectrumProcessingService initialized with settings")
 
     async def process_spectrum_with_params(
         self,
@@ -64,27 +64,27 @@ class SpectrumProcessingService:
             x = np.array(spectrum.x)
             y = np.array(spectrum.y)
 
-            logger.info(f"Processing spectrum with {len(x)} points")
-            logger.info(f"Parameters: smoothing={smoothing}, z_value={z_value}, min_wave={min_wave}, max_wave={max_wave}")
+            logger.debug(f"Processing spectrum with {len(x)} points")
+            logger.debug(f"Parameters: smoothing={smoothing}, z_value={z_value}, min_wave={min_wave}, max_wave={max_wave}")
 
             # Apply wavelength filtering
             if min_wave is not None or max_wave is not None:
                 x, y = self._apply_wavelength_filter(x, y, min_wave, max_wave)
-                logger.info(f"Applied wavelength filter: {len(y)} points remaining")
+                logger.debug(f"Applied wavelength filter: {len(y)} points remaining")
 
             # Apply smoothing
             if smoothing > 0:
                 y = self._apply_smoothing(x, y, smoothing)
-                logger.info(f"Applied smoothing with factor {smoothing}")
+                logger.debug(f"Applied smoothing with factor {smoothing}")
 
             # Normalize spectrum (matching old backend behavior)
             y = normalise_spectrum(y)
-            logger.info("Applied spectrum normalization")
+            logger.debug("Applied spectrum normalization")
 
             # Apply redshift if provided
             if z_value is not None:
                 spectrum.redshift = float(z_value)
-                logger.info(f"Applied redshift: {z_value}")
+                logger.debug(f"Applied redshift: {z_value}")
 
             # Update spectrum with processed data
             spectrum.x = x.tolist()
@@ -104,7 +104,7 @@ class SpectrumProcessingService:
                 }
             })
 
-            logger.info("Spectrum processing completed successfully")
+            logger.debug("Spectrum processing completed successfully")
             return spectrum
 
         except Exception as e:
@@ -145,9 +145,9 @@ class SpectrumProcessingService:
         x_filtered = x[mask]
         y_filtered = y[mask]
 
-        logger.info(f"Wavelength filtering: {len(x)} -> {len(x_filtered)} points")
+        logger.debug(f"Wavelength filtering: {len(x)} -> {len(x_filtered)} points")
         if len(x_filtered) > 0:
-            logger.info(f"Filtered wavelength range: {x_filtered.min():.2f} - {x_filtered.max():.2f}")
+            logger.debug(f"Filtered wavelength range: {x_filtered.min():.2f} - {x_filtered.max():.2f}")
 
         return x_filtered, y_filtered
 

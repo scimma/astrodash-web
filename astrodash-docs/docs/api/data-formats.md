@@ -161,22 +161,6 @@ Similar to DAT format but more flexible:
 - **Line Types**: emission, absorption, continuum
 - **Processing**: Special handling for line identification
 
-### 5. **CSV (Comma-Separated Values)**
-
-#### File Structure
-```csv
-Wavelength,Flux,Error,Line_Type
-3500.0,1.234,0.123,emission
-3501.0,1.245,0.124,absorption
-3502.0,1.256,0.125,emission
-```
-
-#### Format Specifications
-- **Delimiter**: Comma (`,`)
-- **Header**: First row contains column names
-- **Quoting**: Optional quotes around values
-- **Encoding**: UTF-8 recommended
-
 ## Template Data Structures
 
 ### 1. **Template Response Schema**
@@ -394,62 +378,6 @@ batch_summary = {
             "error_type": "ValidationError"
         }
     ]
-}
-```
-
-## Error Response Schemas
-
-### 1. **Standard Error Format**
-
-#### Basic Error
-```json
-{
-  "detail": "Human-readable error message"
-}
-```
-
-#### Validation Error
-```json
-{
-  "detail": [
-    {
-      "loc": ["body", "params", "smoothing"],
-      "msg": "ensure this value is less than or equal to 10",
-      "type": "value_error.number.not_le",
-      "ctx": {"limit_value": 10}
-    }
-  ]
-}
-```
-
-#### Detailed Error
-```json
-{
-  "detail": "File validation failed",
-  "error_code": "FILE_VALIDATION_ERROR",
-  "timestamp": "2023-12-10T14:30:45Z",
-  "request_id": "req_abc123def456",
-  "context": {
-    "file_name": "spectrum.fits",
-    "file_size": 1048576,
-    "file_type": "fits"
-  }
-}
-```
-
-### 2. **Error Types and Codes**
-
-#### Error Code Mapping
-```python
-ERROR_CODES = {
-    "FILE_VALIDATION_ERROR": "File format or content validation failed",
-    "CLASSIFICATION_ERROR": "ML model classification failed",
-    "PROCESSING_ERROR": "Spectrum processing pipeline failed",
-    "MODEL_NOT_FOUND": "Requested ML model not available",
-    "RATE_LIMIT_EXCEEDED": "API rate limit exceeded",
-    "INTERNAL_SERVER_ERROR": "Unexpected server error",
-    "VALIDATION_ERROR": "Request parameter validation failed",
-    "RESOURCE_NOT_FOUND": "Requested resource not found"
 }
 ```
 

@@ -68,7 +68,7 @@ class DashClassifier(BaseClassifier):
                 for age_label in age_labels:
                     type_names.append(f"{t_type}: {age_label}")
 
-            logger.info(f"Loaded {len(type_names)} type names from training parameters")
+            logger.debug(f"Loaded {len(type_names)} type names from training parameters")
             return type_names
 
         except Exception as e:
@@ -92,12 +92,10 @@ class DashClassifier(BaseClassifier):
         else:
             n_types = state_dict['classifier.3.weight'].shape[0]
         self.model = self.load_model_from_state_dict(state_dict, n_types)
-        logger.info(f"Dash model loaded from {self.model_path}")
+        logger.debug(f"Dash model loaded from {self.model_path}")
 
-    async def classify(self, spectrum: Any) -> dict:
-        """
-        Preprocess the spectrum, run inference, and return classification results.
-        """
+    def classify_sync(self, spectrum: Any) -> dict:
+        """Synchronous CPU-bound classification used from async via to_thread."""
         if self.model is None:
             logger.error("Dash model is not loaded. Returning empty result.")
             return {}
@@ -117,14 +115,14 @@ class DashClassifier(BaseClassifier):
         n_bins = len(self.type_names_list)
         softmax = softmax[:n_bins]
 
-        logger.info(f"Softmax shape: {softmax.shape}, type_names_list length: {len(self.type_names_list)}")
-        logger.info(f"Using first {n_bins} outputs from model")
+        logger.debug(f"Softmax shape: {softmax.shape}, type_names_list length: {len(self.type_names_list)}")
+        logger.debug(f"Using first {n_bins} outputs from model")
 
         # Process ALL classifications for future combination
         all_indices = np.argsort(softmax)[::-1]  # Sort all indices
         matches = []
 
-        logger.info(f"Processing all {len(all_indices)} classifications")
+        logger.debug(f"Processing all {len(all_indices)} classifications")
 
         for idx in all_indices:
             if idx < len(self.type_names_list):
@@ -138,7 +136,7 @@ class DashClassifier(BaseClassifier):
                     'rlap': None,
                     'reliable': False
                 })
-                logger.info(f"Added match {len(matches)}: {sn_type} ({sn_age}) - {float(softmax[idx]):.3f}")
+                logger.debug(f"Added match {len(matches)}: {sn_type} ({sn_age}) - {float(softmax[idx]):.3f}")
             else:
                 logger.warning(f"Index {idx} out of range for type_names_list (length: {len(self.type_names_list)})")
 
@@ -179,7 +177,7 @@ class DashClassifier(BaseClassifier):
         calculate_rlap = getattr(spectrum, 'calculate_rlap', False)
         if not calculate_rlap and hasattr(spectrum, 'meta') and spectrum.meta:
             calculate_rlap = spectrum.meta.get('processing_params', {}).get('calculate_rlap', False)
-        logger.info(f"RLAP calculation requested: {calculate_rlap}")
+        logger.debug(f"RLAP calculation requested: {calculate_rlap}")
 
         if calculate_rlap:
             try:
@@ -197,7 +195,7 @@ class DashClassifier(BaseClassifier):
 
 
                     if sn_type in snTemplates:
-                        logger.info(f"Available age bins for {sn_type}: {list(snTemplates[sn_type].keys())}")
+                        logger.debug(f"Available age bins for {sn_type}: {list(snTemplates[sn_type].keys())}")
                     else:
                         logger.warning(f"SN type '{sn_type}' not found in templates")
 
@@ -206,7 +204,7 @@ class DashClassifier(BaseClassifier):
 
                     if template_fluxes:
                         try:
-                            logger.info(f"Computing RLAP for match {i+1} with found templates")
+                            logger.debug(f"Computing RLAP for match {i+1} with found templates")
                             input_minmax_index = get_nonzero_minmax(input_flux_log)
                             rlap_label, used_redshift, rlap_warning = calculate_rlap_with_redshift(
                                 log_wave, input_flux_log, template_fluxes, template_names, template_minmax_indexes, input_minmax_index,
@@ -218,18 +216,18 @@ class DashClassifier(BaseClassifier):
                             logger.error(f"Error during RLAP calculation for match {i+1} ({sn_type}): {e}")
                             match['rlap'] = "N/A"
                             match['rlap_warning'] = True
-                            logger.info(f"Setting RLAP to 'N/A' for match {i+1} due to calculation error")
+                            logger.debug(f"Setting RLAP to 'N/A' for match {i+1} due to calculation error")
                     else:
                         logger.error(f"No valid templates found for RLap calculation for match {i+1}.")
                         match['rlap'] = "N/A"
                         match['rlap_warning'] = True
-                        logger.info(f"Setting RLAP to 'N/A' for match {i+1} due to no templates")
+                        logger.debug(f"Setting RLAP to 'N/A' for match {i+1} due to no templates")
 
                 # Update best_match with RLAP from the best match
                 best_match['rlap'] = matches[0]['rlap']
                 best_match['rlap_warning'] = matches[0]['rlap_warning']
 
-                logger.info(f"RLap score calculated: {best_match.get('rlap', 'N/A')} (warning: {best_match.get('rlap_warning', False)})")
+                logger.debug(f"RLap score calculated: {best_match.get('rlap', 'N/A')} (warning: {best_match.get('rlap_warning', False)})")
 
             except Exception as e:
                 logger.error(f"Error during RLAP calculation setup: {e}")
@@ -255,6 +253,13 @@ class DashClassifier(BaseClassifier):
         }
 
         return result
+
+    async def classify(self, spectrum: Any) -> dict:
+        """
+        Async wrapper that runs the synchronous CPU-bound classify in a thread.
+        """
+        import asyncio
+        return await asyncio.to_thread(self.classify_sync, spectrum)
 
     def load_model_from_state_dict(self, state_dict, n_classes):
         """

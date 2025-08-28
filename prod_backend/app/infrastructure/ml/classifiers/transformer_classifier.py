@@ -30,7 +30,7 @@ class TransformerClassifier(BaseClassifier):
             raise ValueError("Label mapping must be configured")
 
         self.idx_to_label = {v: k for k, v in self.label_mapping.items()}
-        logger.info(f"Using label mapping: {self.label_mapping} with {len(self.label_mapping)} classes")
+        logger.debug(f"Using label mapping: {self.label_mapping} with {len(self.label_mapping)} classes")
 
         # Load the model
         self._load_model()
@@ -66,16 +66,14 @@ class TransformerClassifier(BaseClassifier):
             model.eval()
 
             self.model = model
-            logger.info(f"Transformer model loaded successfully from {self.model_path} with {sum(p.numel() for p in model.parameters())} parameters")
+            logger.debug(f"Transformer model loaded successfully from {self.model_path} with {sum(p.numel() for p in model.parameters())} parameters")
 
         except Exception as e:
             logger.error(f"Failed to load transformer model: {e}")
             self.model = None
 
-    async def classify(self, spectrum: Any) -> dict:
-        """
-        Preprocess the spectrum, run inference, and return classification results.
-        """
+    def classify_sync(self, spectrum: Any) -> dict:
+        """Synchronous CPU-bound classification used from async via to_thread."""
         if self.model is None:
             logger.error("Transformer model is not loaded. Returning empty result.")
             return {}
@@ -95,15 +93,15 @@ class TransformerClassifier(BaseClassifier):
             flux = torch.tensor(flux_data, dtype=torch.float32).unsqueeze(0).to(self.device)              # [1, 1024]
             redshift_tensor = torch.tensor([[redshift]], dtype=torch.float32).to(self.device)             # [1, 1]
 
-            logger.info(f"Input shapes - wavelength: {wavelength.shape}, flux: {flux.shape}, redshift: {redshift_tensor.shape}")
-            logger.info(f"Redshift value: {redshift}")
+            logger.debug(f"Input shapes - wavelength: {wavelength.shape}, flux: {flux.shape}, redshift: {redshift_tensor.shape}")
+            logger.debug(f"Redshift value: {redshift}")
 
             # Run inference
             with torch.no_grad():
                 logits = self.model(wavelength, flux, redshift_tensor)
                 probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
 
-            logger.info(f"Model output probabilities: {probs}")
+            logger.debug(f"Model output probabilities: {probs}")
 
             # Get top 3 predictions using the correct label mapping
             top_indices = np.argsort(probs)[::-1][:3]
@@ -121,7 +119,7 @@ class TransformerClassifier(BaseClassifier):
 
             best_match = matches[0] if matches else {}
 
-            logger.info(f"Classification results - best match: {best_match}")
+            logger.debug(f"Classification results - best match: {best_match}")
 
             return {
                 'best_matches': matches,
@@ -132,6 +130,11 @@ class TransformerClassifier(BaseClassifier):
         except Exception as e:
             logger.error(f"Error during transformer classification: {e}")
             return {}
+
+    async def classify(self, spectrum: Any) -> dict:
+        """Async wrapper that runs the synchronous CPU-bound classify in a thread."""
+        import asyncio
+        return await asyncio.to_thread(self.classify_sync, spectrum)
 
     def load_model_from_state_dict(self, state_dict, model_config: Dict[str, Any]):
         """

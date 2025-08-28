@@ -136,5 +136,6 @@ class Settings(BaseSettings):
             raise ValueError(f"SESSION_COOKIE_SAMESITE must be one of: {allowed_values}")
         return v
 
+
 def get_settings() -> Settings:
     return Settings()

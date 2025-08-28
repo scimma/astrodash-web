@@ -1,5 +1,6 @@
 import zipfile
 import io
+import asyncio
 from typing import List, Dict, Any, Optional, Union
 from fastapi import UploadFile
 from app.domain.services.spectrum_service import SpectrumService
@@ -8,6 +9,7 @@ from app.domain.services.spectrum_processing_service import SpectrumProcessingSe
 from app.domain.models.spectrum import Spectrum
 from app.config.logging import get_logger
 from app.core.exceptions import BatchProcessingException, ValidationException
+from app.infrastructure.ml.model_factory import ModelFactory
 
 logger = get_logger(__name__)
 
@@ -83,9 +85,15 @@ class BatchProcessingService:
         """Process files from a zip archive."""
         logger.info(f"Processing zip file: {zip_file.filename}")
 
-        results = {}
+        results: Dict[str, Any] = {}
         contents = await zip_file.read()
 
+        # Initialize classifier once per batch
+        classifier = self.classification_service.model_factory.get_classifier(
+            model_type, model_id if model_type == "user_uploaded" else None
+        )
+
+        entries: List[tuple] = []
         with zipfile.ZipFile(io.BytesIO(contents)) as zf:
             for fname in zf.namelist():
                 info = zf.getinfo(fname)
@@ -101,16 +109,28 @@ class BatchProcessingService:
                     with zf.open(fname) as file_obj:
                         # Prepare file-like object for spectrum service
                         file_like = self._prepare_file_object(fname, file_obj)
-
-                        # Process the file
-                        result = await self._process_single_file(
-                            file_like, fname, params, model_type, model_id
-                        )
-                        results[fname] = result
-
+                        entries.append((fname, file_like))
                 except Exception as e:
                     logger.error(f"Error reading file {fname}: {e}")
                     results[fname] = {"error": str(e)}
+
+        # Concurrency for processing prepared entries
+        if entries:
+            max_concurrency = min(8, len(entries))
+            semaphore = asyncio.Semaphore(max_concurrency)
+
+            async def worker_zip(name: str, file_like_obj: Any) -> None:
+                async with semaphore:
+                    try:
+                        result = await self._process_single_file(
+                            file_like_obj, name, params, model_type, model_id, classifier
+                        )
+                        results[name] = result
+                    except Exception as e:
+                        logger.error(f"Error processing file {name}: {e}")
+                        results[name] = {"error": str(e)}
+
+            await asyncio.gather(*(worker_zip(n, f) for n, f in entries))
 
         logger.info(f"Zip processing completed. Processed {len(results)} files.")
         return results
@@ -130,26 +150,32 @@ class BatchProcessingService:
 
         logger.info(f"Processing {len(files)} individual files")
 
-        results = {}
+        results: Dict[str, Any] = {}
 
-        for file in files:
-            filename = getattr(file, 'filename', 'unknown')
+        # Initialize classifier once per batch
+        classifier = self.classification_service.model_factory.get_classifier(
+            model_type, model_id if model_type == "user_uploaded" else None
+        )
 
-            # Check file type support
-            if not filename.lower().endswith(self.supported_extensions):
-                results[filename] = {"error": "Unsupported file type"}
-                continue
+        max_concurrency = min(8, max(1, len(files)))
+        semaphore = asyncio.Semaphore(max_concurrency)
 
-            try:
-                # Process the file
-                result = await self._process_single_file(
-                    file, filename, params, model_type, model_id
-                )
-                results[filename] = result
+        async def worker(single_file: Any) -> None:
+            filename_local = getattr(single_file, 'filename', 'unknown')
+            if not filename_local.lower().endswith(self.supported_extensions):
+                results[filename_local] = {"error": "Unsupported file type"}
+                return
+            async with semaphore:
+                try:
+                    result_local = await self._process_single_file(
+                        single_file, filename_local, params, model_type, model_id, classifier
+                    )
+                    results[filename_local] = result_local
+                except Exception as e:
+                    logger.error(f"Error processing file {filename_local}: {e}")
+                    results[filename_local] = {"error": str(e)}
 
-            except Exception as e:
-                logger.error(f"Error processing file {filename}: {e}")
-                results[filename] = {"error": str(e)}
+        await asyncio.gather(*(worker(f) for f in files))
 
         logger.info(f"File list processing completed. Processed {len(results)} files.")
         return results
@@ -177,7 +203,8 @@ class BatchProcessingService:
         filename: str,
         params: Dict[str, Any],
         model_type: str,
-        model_id: Optional[str] = None
+        model_id: Optional[str] = None,
+        classifier=None
     ) -> Dict[str, Any]:
         """Process a single spectrum file."""
         try:
@@ -194,12 +221,14 @@ class BatchProcessingService:
                 result = await self.classification_service.classify_spectrum(
                     processed_spectrum,
                     model_type="user_uploaded",
-                    user_model_id=model_id
+                    user_model_id=model_id,
+                    classifier=classifier
                 )
             else:
                 result = await self.classification_service.classify_spectrum(
                     processed_spectrum,
-                    model_type=model_type
+                    model_type=model_type,
+                    classifier=classifier
                 )
 
             # Format result

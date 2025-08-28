@@ -2,6 +2,7 @@ from typing import Optional, Dict, Any
 from app.domain.models.spectrum import Spectrum
 from app.domain.models.classification import Classification
 from app.infrastructure.ml.model_factory import ModelFactory
+from app.infrastructure.ml.classifiers.base import BaseClassifier
 from app.config.settings import Settings, get_settings
 from app.config.logging import get_logger
 from app.core.exceptions import ClassificationException
@@ -19,7 +20,8 @@ class ClassificationService:
         spectrum: Spectrum,
         model_type: str,
         user_model_id: Optional[str] = None,
-        params: Optional[Dict[str, Any]] = None
+        params: Optional[Dict[str, Any]] = None,
+        classifier: Optional[BaseClassifier] = None
     ) -> Classification:
         """
         Classify spectrum using the specified model type or user-uploaded model.
@@ -41,7 +43,9 @@ class ClassificationService:
             model_type = "user_uploaded"
             logger.info(f"Using user-uploaded model: {user_model_id}")
 
-        classifier = self.model_factory.get_classifier(model_type, user_model_id)
+        # Reuse provided classifier when available to avoid re-loading models repeatedly
+        if classifier is None:
+            classifier = self.model_factory.get_classifier(model_type, user_model_id)
         results = await classifier.classify(spectrum)
 
         if not results:

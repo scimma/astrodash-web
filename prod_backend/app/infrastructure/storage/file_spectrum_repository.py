@@ -43,7 +43,7 @@ class FileSpectrumRepository(SpectrumRepository):
                     "redshift": spectrum.redshift,
                     "meta": spectrum.meta
                 }, f)
-            logger.info(f"Saved spectrum {spectrum.id} to {path}")
+            logger.debug(f"Saved spectrum {spectrum.id} to {path}")
             return spectrum
         except Exception as e:
             logger.error(f"Error saving spectrum: {e}", exc_info=True)
@@ -72,7 +72,7 @@ class FileSpectrumRepository(SpectrumRepository):
     def get_from_file(self, file: Any) -> Optional[Spectrum]:
         # Accepts UploadFile or file-like object
         filename = getattr(file, 'filename', 'unknown')
-        logger.info(f"Reading spectrum file: {filename}")
+        logger.debug(f"Reading spectrum file: {filename}")
 
         try:
             import pandas as pd
@@ -356,10 +356,10 @@ class OSCSpectrumRepository(SpectrumRepository):
 
             # Use the correct API structure: /{OBJECT_NAME}/spectra/time+data
             url = f"{self.base_url}/{obj_name}/spectra/time+data"
-            logger.info(f"OSC repository: Attempting to fetch spectrum from {url}")
+            logger.debug(f"OSC repository: Attempting to fetch spectrum from {url}")
 
             response = requests.get(url, verify=False, timeout=30)
-            logger.info(f"OSC repository: Received response status {response.status_code} for {osc_ref}")
+            logger.debug(f"OSC repository: Received response status {response.status_code} for {osc_ref}")
 
             if response.status_code != 200:
                 logger.error(f"OSC API returned status {response.status_code} for {osc_ref}")
@@ -379,7 +379,7 @@ class OSCSpectrumRepository(SpectrumRepository):
                 import numpy as np
                 wave, flux = np.array(spectrum_data).T.astype(float)
 
-                logger.info(f"OSC repository: Successfully parsed spectrum data for {osc_ref}")
+                logger.debug(f"OSC repository: Successfully parsed spectrum data for {osc_ref}")
 
             except (KeyError, IndexError, TypeError) as e:
                 logger.error(f"Failed to parse spectrum data structure for {osc_ref}: {e}")
@@ -406,12 +406,12 @@ class OSCSpectrumRepository(SpectrumRepository):
                 meta={"source": "osc", "object_name": obj_name}
             )
 
-            logger.info(f"OSC repository: Created spectrum object: {spectrum}")
+            logger.debug(f"OSC repository: Created spectrum object: {spectrum}")
 
             # Validate spectrum
             try:
                 validate_spectrum(spectrum.x, spectrum.y, spectrum.redshift)
-                logger.info(f"OSC repository: Spectrum validation passed")
+                logger.debug(f"OSC repository: Spectrum validation passed")
             except Exception as e:
                 logger.error(f"OSC repository: Spectrum validation failed: {e}")
                 return None

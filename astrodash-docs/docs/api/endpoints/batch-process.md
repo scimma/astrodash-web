@@ -26,7 +26,7 @@ multipart/form-data
 ### Parameters
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `zip_file` | File | Yes | ZIP file containing spectrum files (FITS, DAT, TXT, LNW, CSV) |
+| `zip_file` | File | Yes | ZIP file containing spectrum files (FITS, DAT, TXT, LNW) |
 | `params` | String (JSON) | No | Processing parameters as JSON string (see `/process` endpoint) |
 
 ## Response
