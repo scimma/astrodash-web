@@ -89,7 +89,7 @@ class UserClassifier(BaseClassifier):
                     wavelength = np.interp(x_new, x_old, wavelength)
                 wavelength_tensor = torch.tensor(wavelength, dtype=torch.float32).unsqueeze(0)  # [1, target_length]
                 flux_tensor = torch.tensor(flux, dtype=torch.float32).unsqueeze(0)              # [1, target_length]
-                redshift_tensor = torch.tensor([[redshift]], dtype=torch.float32)               # [1, 1]
+                redshift_tensor = torch.tensor([redshift], dtype=torch.float32)               # [1]
                 with torch.no_grad():
                     output = self.model(wavelength_tensor, flux_tensor, redshift_tensor)
                 probs = torch.softmax(output, dim=-1).cpu().numpy()[0]

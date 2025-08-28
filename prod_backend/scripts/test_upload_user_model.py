@@ -5,16 +5,17 @@ import shutil
 import tempfile
 import torch
 import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '../app/services'))
-from transformer_model import spectraTransformerEncoder
+
+# Fix the import path to use the current project structure
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+from app.infrastructure.ml.classifiers.architectures import spectraTransformerEncoder
 
 API_URL = 'http://localhost:8000'
 TRANSFORMER_MODEL_PATH = os.path.join(
-    os.path.dirname(__file__), '..', 'astrodash_models', 'yuqing_models', 'TF_wiserep_v6.pt'
-)
+    "/data/pre_trained_models/transformer/TF_wiserep_v6.pt")
 
 TORCHSCRIPT_MODEL_PATH = os.path.join(
-    os.path.dirname(__file__), '..', 'astrodash_models', 'yuqing_models', 'TF_wiserep_v6_torchscript.pt'
+    "/data/pre_trained_models/transformer/TF_wiserep_v6_torchscript.pt"
 )
 
 
@@ -33,7 +34,8 @@ CLASS_MAPPING = {
     "II": 3,
     "Ib/c": 4
 }
-INPUT_SHAPE = [1, 1024]  # The transformer expects (batch, 1024)
+# The transformer expects 3 separate inputs: wavelength, flux, redshift
+INPUT_SHAPE = [[1, 1024], [1, 1024], [1]]  # [wavelength, flux, redshift]
 
 # Dummy spectrum for classification
 dummy_spectrum = {
@@ -68,10 +70,23 @@ def export_torchscript_if_needed():
     state_dict = torch.load(TRANSFORMER_MODEL_PATH, map_location='cpu')
     model.load_state_dict(state_dict, strict=False)
     model.eval()
-    # Create dummy input matching the model's forward signature
-    # (wavelength, flux, redshift)
-    scripted = torch.jit.script(model)
-    scripted.save(TORCHSCRIPT_MODEL_PATH)
+
+    # Create dummy inputs for tracing that match the model's expected input shapes
+    batch_size = 1
+    seq_length = 1024
+    dummy_wavelength = torch.randn(batch_size, seq_length)
+    dummy_flux = torch.randn(batch_size, seq_length)
+    dummy_redshift = torch.randn(batch_size)
+
+    # Use torch.jit.trace instead of script for more reliable export
+    with torch.no_grad():
+        traced_model = torch.jit.trace(
+            model,
+            (dummy_wavelength, dummy_flux, dummy_redshift),
+            check_trace=False  # Disable trace checking to avoid shape issues
+        )
+
+    traced_model.save(TORCHSCRIPT_MODEL_PATH)
     return TORCHSCRIPT_MODEL_PATH
 
 

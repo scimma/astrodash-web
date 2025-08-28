@@ -1046,21 +1046,7 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
             <Grid item xs={12}>
               <SpaceCard>
                 <SpaceSectionHeader>Best Matches</SpaceSectionHeader>
-                {/* Estimated Redshift Display for DASH Model */}
-                {currentModelType === 'dash' && spectrumData?.classification?.best_match?.redshift !== undefined &&
-                 spectrumData?.classification?.best_match?.redshift !== null && (
-                  <Box sx={{ mb: 2, p: 2, backgroundColor: 'rgba(33, 150, 243, 0.1)', borderRadius: 1, border: '1px solid rgba(33, 150, 243, 0.3)' }}>
-                    <Typography variant="subtitle1" sx={{ color: '#2196f3', fontWeight: 600, mb: 1 }}>
-                      Estimated Redshift
-                    </Typography>
-                    <Typography variant="h6" sx={{ color: 'white', fontFamily: 'monospace' }}>
-                      z = {spectrumData.classification.best_match.redshift.toFixed(4)}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: '#b0b8c9', mt: 1 }}>
-                      Redshift estimated using DASH model templates
-                    </Typography>
-                  </Box>
-                )}
+
                 <Box sx={{ display: 'flex', gap: 2 }}>
                   <Box sx={{ width: '100%' }}>
                     <Fade in={bestMatches.length > 0} timeout={600}>
@@ -1103,9 +1089,7 @@ const SupernovaClassifier: React.FC<SupernovaClassifierProps> = ({ toggleColorMo
                                   match.rlap !== undefined && match.rlap !== null && match.rlap !== "N/A" &&
                                   <> | RLAP: {match.rlap}</>
                                 }
-                                {currentModelType === 'dash' && match.redshift !== undefined && match.redshift !== null &&
-                                  <> | Redshift: {match.redshift.toFixed(4)}</>
-                                }
+
                               </Typography>
                             </ListItem>
                           );
