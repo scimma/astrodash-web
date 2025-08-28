@@ -363,21 +363,14 @@ custom_output = {
 ```json
 {
   "file1.fits": {
-    "status": "success",
-    "result": {
-      "spectrum": {...},
-      "classification": {...}
-    }
+    "spectrum": { ... },
+    "classification": { ... }
   },
   "file2.dat": {
-    "status": "success",
-    "result": {
-      "spectrum": {...},
-      "classification": {...}
-    }
+    "spectrum": { ... },
+    "classification": { ... }
   },
   "file3.txt": {
-    "status": "error",
     "error": "No valid spectrum data found"
   }
 }
@@ -422,7 +415,7 @@ batch_summary = {
     {
       "loc": ["body", "params", "smoothing"],
       "msg": "ensure this value is less than or equal to 10",
-      "type": "value_error.any_str.max_length",
+      "type": "value_error.number.not_le",
       "ctx": {"limit_value": 10}
     }
   ]
@@ -474,19 +467,11 @@ Accept: application/json
 #### Response Headers
 ```
 Content-Type: application/json
-Retry-After: 60
 ```
 
 **Note**: The API does not provide `X-RateLimit-*` or `X-Processing-Time` headers. Rate limiting is handled via HTTP 429 status codes with `Retry-After` headers.
 
 ### 2. **Custom Headers**
-
-#### Processing Headers
-```
-X-Request-ID: req_abc123def456
-X-Model-Version: 1.0.0
-X-Processing-Pipeline: v2
-```
 
 ## Data Validation Rules
 
@@ -562,10 +547,10 @@ def convert_fits_to_dat(fits_file, dat_file):
     fluxes = data['FLUX']
 
     # Write DAT file
-    with open(dat_file, 'w') as f:
-        f.write("# Wavelength(Angstrom)  Flux(erg/s/cm2/Angstrom)\n")
-        for w, f in zip(wavelengths, fluxes):
-            f.write(f"{w:.3f}  {f:.6f}\n")
+    with open(dat_file, 'w') as fh:
+        fh.write("# Wavelength(Angstrom)  Flux(erg/s/cm2/Angstrom)\n")
+        for w, flx in zip(wavelengths, fluxes):
+            fh.write(f"{w:.3f}  {flx:.6f}\n")
 
 def convert_dat_to_csv(dat_file, csv_file):
     """Convert DAT file to CSV format."""

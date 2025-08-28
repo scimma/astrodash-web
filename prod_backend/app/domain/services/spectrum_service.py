@@ -100,8 +100,8 @@ class SpectrumService:
         try:
             if file:
                 logger.info(f"Processing uploaded file: {getattr(file, 'filename', 'unknown')}")
-                # Validate file extension
-                validate_file_extension(getattr(file, 'filename', ''), [".dat", ".lnw", ".txt"])
+                # Validate file extension (now supports .fits as well)
+                validate_file_extension(getattr(file, 'filename', ''), [".dat", ".lnw", ".txt", ".fits"])
                 return await self.get_spectrum_from_file(file)
             elif osc_ref:
                 logger.info(f"Processing OSC reference: {osc_ref}")

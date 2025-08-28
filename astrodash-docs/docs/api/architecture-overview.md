@@ -4,7 +4,7 @@ sidebar_position: 2
 
 # Architecture Overview
 
-AstroDash follows a clean, layered architecture for maintainability and testability. All code is open sourced and available at https://github.com/jesusCaraball0/astrodash-web
+AstroDASH 2.0 follows a clean, layered architecture for maintainability and testability. All code is open sourced and available at https://github.com/jesusCaraball0/astrodash-web
 
 ## High-level layers
 
@@ -27,7 +27,7 @@ AstroDash follows a clean, layered architecture for maintainability and testabil
    - Reside in `app/infrastructure/ml/*`
 
 5. Core & Config
-   - Exception handling, middleware (security headers, rate limiting, request logging), logging, settings
+   - Exception handling, middlewar, logging, settings
    - Reside in `app/core/*` and `app/config/*`
 
 ## Request flow (example: POST /api/v1/process)
@@ -36,7 +36,7 @@ AstroDash follows a clean, layered architecture for maintainability and testabil
 2. `SpectrumService` obtains spectrum data (file or OSC)
 3. `SpectrumProcessingService` applies filtering, smoothing, normalization, metadata
 4. `ClassificationService` selects appropriate classifier (Dash/Transformer/User) via `ModelFactory`
-5. ML classifier runs inference; optional RLAP added for Dash if requested
+5. ML classifier runs inference
 6. Response is serialized with sanitized numeric types
 
 ## Dependency injection
@@ -46,9 +46,3 @@ The `app/core/dependencies.py` module wires services, repositories, and config t
 ## Error handling
 
 All exceptions are mapped to structured JSON errors in `app/core/exceptions.py`, with precise HTTP status codes and sanitized messages.
-
-## Observability and security
-
-- Security headers middleware, input validation, rate limiting
-- Structured logging and request logging with timing
-- Health endpoint exposes service readiness

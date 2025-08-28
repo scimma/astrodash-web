@@ -4,7 +4,7 @@ sidebar_position: 3
 
 # Error Model
 
-AstroDash returns structured JSON errors with appropriate HTTP status codes, designed to be easy to act on.
+AstroDASH 2.0 returns structured JSON errors with appropriate HTTP status codes, designed to be easy to act on.
 
 ## Response shape
 
@@ -32,8 +32,11 @@ FastAPI validation errors (schema-level) may return a list under `detail`:
   - Classification or processing failed due to invalid input
   - Examples:
     ```json
-    { "detail": "Unsupported file format: .foo. Supported formats: FITS, DAT, TXT, LNW, CSV" }
+    { "detail": "Unsupported file format: .foo. Supported formats: FITS, DAT, TXT, LNW" }
     { "detail": "Error reading file: spectrum.txt - could not parse column 2" }
+    { "detail": "Classification failed." }
+    { "detail": "Spectrum processing failed." }
+    { "detail": "Batch processing failed." }
     ```
 
 - 404 Not Found
@@ -43,6 +46,8 @@ FastAPI validation errors (schema-level) may return a list under `detail`:
     { "detail": "Model with ID 'abc123' not found." }
     { "detail": "Template not found for SN type 'Ia' and age bin '2 to 6'." }
     { "detail": "Element 'Xe' not found in line list." }
+    { "detail": "Spectrum with ID 'abc123' not found." }
+    { "detail": "File not found: /path/to/file.txt" }
     ```
 
 - 409 Conflict
@@ -54,9 +59,11 @@ FastAPI validation errors (schema-level) may return a list under `detail`:
 
 - 422 Unprocessable Entity
   - Validation failed for inputs or files (domain validation)
-  - Example:
+  - Examples:
     ```json
     { "detail": "File validation failed." }
+    { "detail": "Model validation failed." }
+    { "detail": "Spectrum validation failed." }
     ```
 
 - 429 Too Many Requests
@@ -74,6 +81,9 @@ FastAPI validation errors (schema-level) may return a list under `detail`:
     { "detail": "Internal server error." }
     { "detail": "Module import error: some.module.Missing" }
     { "detail": "Configuration error." }
+    { "detail": "Storage error." }
+    { "detail": "Model configuration error." }
+    { "detail": "OSC service error." }
     ```
 
 ## Exception → HTTP mapping
@@ -83,6 +93,9 @@ Exceptions in `app/core/exceptions.py` are mapped as follows:
 | Exception | HTTP | Notes |
 | --- | --- | --- |
 | ValidationException (and subclasses) | 422 | Input or file-level validation |
+| FileValidationException | 422 | File validation errors |
+| ModelValidationException | 422 | Model validation errors |
+| SpectrumValidationException | 422 | Spectrum validation errors |
 | ClassificationException | 400 | Model inference or prep failed |
 | SpectrumProcessingException | 400 | Processing pipeline failed |
 | BatchProcessingException | 400 | Zip/file list processing failed |
@@ -91,9 +104,15 @@ Exceptions in `app/core/exceptions.py` are mapped as follows:
 | TemplateNotFoundException | 404 | No matching template |
 | LineListNotFoundException | 404 | Missing line list file |
 | ElementNotFoundException | 404 | Unknown element key |
+| ResourceNotFoundException | 404 | Missing resource by ID |
 | ResourceConflictException / ModelConflictException | 409 | Duplicate names or conflicts |
 | ConfigurationException | 500 | Misconfiguration |
 | ExternalServiceException / OSCServiceException | 500 | Upstream failure |
+| FileNotFoundException | 404 | File not found |
+| FileReadException | 400 | Error reading file |
+| UnsupportedFileFormatException | 400 | Unsupported file format |
+| StorageException | 500 | Storage-related errors |
+| ModelConfigurationException | 500 | Model configuration errors |
 
 ## Operational limits
 
@@ -112,7 +131,7 @@ Exceptions in `app/core/exceptions.py` are mapped as follows:
 - Process spectrum (`POST /api/v1/process`)
   - ```json
     { "detail": "No valid spectrum data found in file" }
-    { "detail": "Unsupported file format: .foo. Supported formats: FITS, DAT, TXT, LNW, CSV" }
+    { "detail": "Unsupported file format: .foo. Supported formats: FITS, DAT, TXT, LNW" }
     ```
 - Batch process (`POST /api/v1/batch-process`)
   - ```json

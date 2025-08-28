@@ -4,7 +4,7 @@ sidebar_position: 11
 
 # Troubleshooting & Debugging
 
-Comprehensive guide to diagnosing and resolving issues with AstroDash API.
+Comprehensive guide to diagnosing and resolving issues with AstroDASH 2.0 API.
 
 ## Common Failure Scenarios
 
@@ -172,7 +172,7 @@ The API uses a single consolidated log file (`app.log`) with structured JSON for
 
 ```bash
 # Typical log entry (JSON format)
-{"timestamp": "2023-12-10 14:30:45", "level": "INFO", "logger": "astrodash.api.v1.spectrum", "message": "Requested analysis options", "module": "spectrum", "function": "get_analysis_options", "line": 45}
+{"timestamp": "2023-12-10 14:30:45", "level": "INFO", "logger": "app.api.v1.spectrum", "message": "Requested analysis options", "module": "spectrum", "function": "get_analysis_options", "line": 45}
 
 # Components:
 # timestamp: When the event occurred
@@ -187,28 +187,28 @@ The API uses a single consolidated log file (`app.log`) with structured JSON for
 #### Useful Log Queries
 ```bash
 # Find all errors
-grep '"level": "ERROR"' /var/log/astrodash/app.log
+grep '"level": "ERROR"' logs/app.log
 
 # Find specific error types
-grep "ClassificationException" /var/log/astrodash/app.log
+grep "ClassificationException\|SpectrumProcessingException\|ValidationException" logs/app.log
 
 # Find errors in last hour
-grep "$(date '+%Y-%m-%d %H')" /var/log/astrodash/app.log | grep '"level": "ERROR"'
+grep "$(date '+%Y-%m-%d %H')" logs/app.log | grep '"level": "ERROR"'
 
 # Count error types
-grep '"level": "ERROR"' /var/log/astrodash/app.log | jq -r '.message' | sort | uniq -c
+grep '"level": "ERROR"' logs/app.log | jq -r '.message' | sort | uniq -c
 
 # Find specific endpoint usage
-grep "Requested analysis options" /var/log/astrodash/app.log
+grep "Requested analysis options" logs/app.log
 
 # Find requests from specific user/context
-grep "user_id.*123" /var/log/astrodash/app.log
+grep "user_id.*123" logs/app.log
 
 # Show only INFO and above
-grep -E '("level": "INFO"|"level": "WARN"|"level": "ERROR")' /var/log/astrodash/app.log
+grep -E '("level": "INFO"|"level": "WARN"|"level": "ERROR")' logs/app.log
 
 # Show only errors with context
-grep -A5 -B5 '"level": "ERROR"' /var/log/astrodash/app.log
+grep -A5 -B5 '"level": "ERROR"' logs/app.log
 ```
 
 ### 2. **Log File Management**
@@ -217,24 +217,24 @@ grep -A5 -B5 '"level": "ERROR"' /var/log/astrodash/app.log
 The API automatically rotates logs:
 - **Max file size**: 10MB per log file
 - **Backup count**: 5 rotated files
-- **Location**: Configured via `LOG_DIR` environment variable
+- **Location**: Configured via `LOG_DIR` environment variable (default: `logs/`)
 - **Format**: JSON for structured parsing
 
 ```bash
 # Check log directory
-ls -la /var/log/astrodash/
+ls -la logs/  # Default log directory
 
 # Check current log file size
-du -h /var/log/astrodash/app.log
+du -h logs/app.log
 
 # View rotated logs
-ls -la /var/log/astrodash/app.log.*
+ls -la logs/app.log.*
 
 # Monitor log file in real-time
-tail -f /var/log/astrodash/app.log
+tail -f logs/app.log
 
 # Search across all log files
-grep "ERROR" /var/log/astrodash/app.log*
+grep "ERROR" logs/app.log*
 ```
 
 ## Performance Tuning
@@ -297,109 +297,6 @@ top -p $(pgrep -f astrodash)
 # Profile Python code
 python -m cProfile -o profile.stats app.py
 python -c "import pstats; p = pstats.Stats('profile.stats'); p.sort_stats('cumulative').print_stats(20)"
-```
-
-## Environment-Specific Issues
-
-### 1. **Development Environment**
-
-#### Common Development Issues
-**Port Conflicts:**
-```bash
-# Check if port 8000 is already in use
-lsof -i :8000
-
-# Kill conflicting process
-kill -9 $(lsof -t -i:8000)
-```
-
-**Missing Dependencies:**
-```bash
-# Check Python packages
-pip list | grep -E "(fastapi|torch|numpy)"
-
-# Reinstall requirements
-pip install -r requirements.txt --force-reinstall
-```
-
-**Environment Variables:**
-```bash
-# Check environment variables
-env | grep ASTRODASH
-
-# Set required variables
-export ASTRODASH_MODEL_PATH="/path/to/models"
-export ASTRODASH_LOG_LEVEL="DEBUG"
-```
-
-### 2. **Production Environment**
-
-#### Production-Specific Issues
-**File Permissions:**
-```bash
-# Check file permissions
-ls -la /var/log/astrodash/
-ls -la /path/to/models/
-
-# Fix permissions if needed
-sudo chown -R astrodash:astrodash /var/log/astrodash/
-sudo chmod 755 /path/to/models/
-```
-
-**Service Management:**
-```bash
-# Check service status
-sudo systemctl status astrodash
-
-# Restart service
-sudo systemctl restart astrodash
-
-# View service logs
-sudo journalctl -u astrodash -f
-```
-
-**Load Balancing:**
-```bash
-# Check nginx configuration
-sudo nginx -t
-
-# Reload nginx
-sudo systemctl reload nginx
-
-# Check upstream health
-curl -H "Host: api.example.com" http://localhost/health
-```
-
-### 3. **Container Environment**
-
-#### Docker Issues
-```bash
-# Check container status
-docker ps -a
-
-# View container logs
-docker logs astrodash-api
-
-# Check container resources
-docker stats astrodash-api
-
-# Execute commands in container
-docker exec -it astrodash-api bash
-```
-
-#### Kubernetes Issues
-```bash
-# Check pod status
-kubectl get pods -l app=astrodash
-
-# View pod logs
-kubectl logs -l app=astrodash
-
-# Check pod events
-kubectl describe pod astrodash-pod-name
-
-# Port forward for debugging
-kubectl port-forward astrodash-pod-name 8000:8000
 ```
 
 ## Debugging Tools
@@ -487,9 +384,9 @@ inotifywait -m /var/log/astrodash/
 
 ### 1. **Quick Diagnosis**
 - [ ] Check API health endpoint: `GET /health`
-- [ ] Verify service is running: `systemctl status astrodash`
+- [ ] Verify service is running: `systemctl status astrodash` (if using systemd)
 - [ ] Check port accessibility: `telnet localhost 8000`
-- [ ] Review recent error logs: `tail -100 /var/log/astrodash/app.log | grep '"level": "ERROR"'`
+- [ ] Review recent error logs: `tail -100 logs/app.log | grep '"level": "ERROR"'`
 - [ ] Test with minimal request: `curl -X GET "http://localhost:8000/health"`
 
 ### 2. **File Processing Issues**
@@ -540,7 +437,7 @@ pip list
 systemctl status astrodash
 
 # Collect logs
-tail -1000 /var/log/astrodash/app.log > app_log.txt
+tail -1000 logs/app.log > app_log.txt
 
 # Test connectivity
 curl -v "http://localhost:8000/health" > health_test.txt
@@ -549,8 +446,6 @@ curl -v "http://localhost:8000/health" > health_test.txt
 ### 3. **Support Channels**
 - **GitHub Issues**: For bug reports and feature requests
 - **Documentation**: Check this troubleshooting guide first
-- **Community**: Join discussions and ask questions
-- **Email Support**: For enterprise customers
 
 ## Prevention Best Practices
 

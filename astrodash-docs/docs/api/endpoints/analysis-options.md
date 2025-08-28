@@ -4,7 +4,7 @@ sidebar_position: 4
 
 # Analysis Options
 
-Get available SN types and age bins for analysis.
+Get available SN types and age bins for DASH templates.
 
 ## Endpoint
 
@@ -14,7 +14,7 @@ GET /api/v1/analysis-options
 
 ## Description
 
-Returns the list of available supernova types and their corresponding age bins for use in spectrum processing and classification.
+Returns the list of available supernova types and their corresponding age bins for use in spectrum processing, classification, or template matching.
 
 ## Request
 

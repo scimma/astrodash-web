@@ -4,9 +4,17 @@ sidebar_position: 9
 
 # Advanced Usage Patterns
 
-Learn advanced techniques for integrating with AstroDash API effectively.
+Learn advanced techniques for integrating with the AstroDASH 2.0 API effectively.
 
 ## Batch Processing Strategies
+
+**Note**: The AstroDash API supports two batch processing modes:
+- **ZIP file processing**: Upload a ZIP archive containing multiple spectrum files
+- **Individual file processing**: Upload multiple individual files simultaneously
+
+**Supported file formats**: `.fits`, `.dat`, `.txt`, `.lnw`
+
+**File size limits**: 50MB per file, 100MB total per request
 
 ### Efficient Batch Processing
 
@@ -28,7 +36,8 @@ def process_large_dataset(file_list, chunk_size=50):
         with open(f'chunk_{i//chunk_size}.zip', 'rb') as zip_file:
             response = requests.post(
                 'http://localhost:8000/api/v1/batch-process',
-                files={'zip_file': zip_file}
+                files={'zip_file': zip_file},
+                data={'params': '{}', 'model_id': None}  # Required parameters
             )
             chunk_results = response.json()
             results.update(chunk_results)
@@ -58,12 +67,13 @@ class BatchProcessor:
                 zipf.write(file_path, os.path.basename(file_path))
 
         try:
-            with open(zip_path, 'rb') as zip_file:
-                response = self.session.post(
-                    'http://localhost:8000/api/v1/batch-process',
-                    files={'zip_file': zip_file}
-                )
-                return response.json()
+                    with open(zip_path, 'rb') as zip_file:
+            response = self.session.post(
+                'http://localhost:8000/api/v1/batch-process',
+                files={'zip_file': zip_file},
+                data={'params': '{}', 'model_id': None}  # Required parameters
+            )
+            return response.json()
         finally:
             os.remove(zip_path)
 
@@ -104,12 +114,19 @@ def process_with_progress(file_list):
             pbar.update(processed - i)
 
             # Rate limiting consideration
+            # API allows 600 requests/minute with 100 burst limit
             time.sleep(0.1)
 
     return results
 ```
 
 ## Error Handling Strategies
+
+**Note**: The AstroDash API provides structured error responses:
+- **Validation Errors**: 422 status with detailed field-level error information
+- **File Errors**: 400 status for unsupported file types or sizes
+- **Processing Errors**: 500 status for ML model or processing failures
+- **Rate Limiting**: 429 status with `Retry-After` header
 
 ### Comprehensive Error Handling
 
@@ -238,6 +255,13 @@ def process_spectrum_with_fallback(file_path, primary_endpoint=None):
 ```
 
 ## Caching Strategies
+
+**Note**: The AstroDash backend has limited built-in caching:
+- **Model Loading**: ML models are cached in memory after first load
+- **Line List Data**: Line list data is cached in memory for performance
+- **No Response Caching**: Individual API responses are not cached
+
+For production use, consider implementing client-side caching or using a reverse proxy with caching.
 
 ### Response Caching
 
@@ -441,7 +465,15 @@ async def main():
 asyncio.run(main())
 ```
 
+**Note**: The AstroDash backend is built with FastAPI and uses async/await extensively. All API endpoints are async and support concurrent processing. The backend uses `asyncio.to_thread()` for CPU-intensive operations like ML model inference and file processing.
+
 ## Monitoring and Observability
+
+**Note**: The AstroDash backend provides:
+- **Structured Logging**: All API calls are logged with request IDs and timing
+- **IP Address Tracking**: Real IP extraction from proxy headers
+- **Error Logging**: Detailed error logging with stack traces
+- **Performance Metrics**: Request duration and success/failure tracking
 
 ### Request Logging
 ```python
@@ -540,13 +572,13 @@ print(json.dumps(metrics.get_stats(), indent=2))
 
 ## Best Practices Summary
 
-1. **Batch Processing**: Use appropriate chunk sizes and implement parallel processing
-2. **Error Handling**: Implement retry logic with exponential backoff and circuit breakers
-3. **Caching**: Cache results to avoid reprocessing identical requests
+1. **Batch Processing**: Use ZIP files for large datasets, respect 50MB per file limit
+2. **Error Handling**: Implement retry logic with exponential backoff (API provides 429 with Retry-After)
+3. **Caching**: Implement client-side caching (backend has limited built-in caching)
 4. **Connection Management**: Use connection pooling and session reuse
-5. **Async Processing**: Use async/await for I/O-bound operations
-6. **Monitoring**: Log requests, collect metrics, and implement observability
-7. **Rate Limiting**: Respect rate limits and implement client-side throttling
+5. **Async Processing**: Leverage FastAPI's async endpoints for concurrent processing
+6. **Monitoring**: Use the built-in structured logging and request tracking
+7. **Rate Limiting**: Respect 600 requests/minute limit with 100 burst allowance
 8. **Resource Management**: Clean up temporary files and connections
-9. **Validation**: Validate inputs before sending to the API
+9. **Validation**: Validate file types (.fits, .dat, .txt, .lnw, .csv) before upload
 10. **Graceful Degradation**: Implement fallback strategies for critical operations

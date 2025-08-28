@@ -94,12 +94,9 @@ def plot_spectrum_result(result):
 
     # Highlight top match
     top_match = classification['best_matches'][0]['type']
-    confidence = classification['best_matches'][0]['confidence']
-
-    if sn_type == top_match:
-        for i, (bar, sn_type) in enumerate(zip(bars, types)):
-            if sn_type == top_match:
-                bar.set_color('red')
+    for bar, t in zip(bars, types):
+        if t == top_match:
+            bar.set_color('red')
 
     plt.tight_layout()
     plt.show()
@@ -269,19 +266,18 @@ if result and template:
 ### Estimate Redshift
 
 ```python
-def estimate_redshift(wavelengths, fluxes, sn_type="Ia-norm", age="4 to 8"):
+def estimate_redshift_from_file(file_path, sn_type="Ia", age_bin="4 to 8"):
     """
-    Estimate redshift for a spectrum.
+    Estimate redshift using a spectrum file via the redshift endpoint.
     """
+    files = {'file': open(file_path, 'rb')}
     data = {
-        'x': wavelengths.tolist() if hasattr(wavelengths, 'tolist') else wavelengths,
-        'y': fluxes.tolist() if hasattr(fluxes, 'tolist') else fluxes,
-        'type': sn_type,
-        'age': age
+        'sn_type': sn_type,
+        'age_bin': age_bin
     }
 
     response = requests.post('http://localhost:8000/api/v1/estimate-redshift',
-                           json=data)
+                             files=files, data=data)
 
     if response.status_code == 200:
         return response.json()
@@ -291,13 +287,7 @@ def estimate_redshift(wavelengths, fluxes, sn_type="Ia-norm", age="4 to 8"):
         return None
 
 # Example usage
-import numpy as np
-
-# Create sample data (replace with your actual spectrum)
-wavelengths = np.linspace(3500, 10000, 1000)
-fluxes = np.random.normal(1.0, 0.1, 1000)  # Replace with actual flux data
-
-redshift_result = estimate_redshift(wavelengths, fluxes, "Ia-norm", "4 to 8")
+redshift_result = estimate_redshift_from_file("spectrum.fits", "Ia", "4 to 8")
 if redshift_result:
     print(f"Estimated redshift: {redshift_result['estimated_redshift']:.3f}")
     print(f"Redshift error: {redshift_result['estimated_redshift_error']:.3f}")

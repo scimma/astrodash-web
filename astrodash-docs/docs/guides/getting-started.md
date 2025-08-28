@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Getting Started (v1 API)
 
-Welcome to the Astrodash API! This guide will help you get up and running with spectrum processing and supernova classification in minutes.
+Welcome to the AstroDASH 2.0 API! This guide will help you get up and running with spectrum processing and supernova classification in minutes.
 
 ## Prerequisites
 

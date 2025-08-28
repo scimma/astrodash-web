@@ -4,7 +4,7 @@ sidebar_position: 5
 
 # Template Spectrum
 
-Get a template spectrum for a given SN type and age bin.
+Get a template spectrum from DASH for a given SN type and age bin.
 
 ## Endpoint
 
@@ -21,8 +21,8 @@ Returns a template spectrum for a specified supernova type and age bin. Useful f
 ### Query Parameters
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `sn_type` | String | No | "Ia" | Supernova type (e.g., "Ia-norm") |
-| `age_bin` | String | No | "2 to 6" | Age bin (e.g., "4 to 8") |
+| `sn_type` | String | Yes | "Ia" | Supernova type (e.g., "Ia-norm") |
+| `age_bin` | String | Yes | "2 to 6" | Age bin (e.g., "4 to 8") |
 
 ## Response
 

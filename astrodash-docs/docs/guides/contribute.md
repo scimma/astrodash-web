@@ -5,13 +5,13 @@ description: How to contribute to AstroDash, including how to add a new ML class
 
 ## Overview
 
-Thanks for your interest in contributing! This page highlights common contribution areas and, most importantly, how to add a new ML classifier model to AstroDash.
+Thanks for your interest in contributing! This page highlights common contribution areas like a dding a new ML classifier to the codebase.
 
 If you run into anything unclear, please open an issue or a draft PR so we can help refine this guide.
 
 ## Contribute a new ML classifier model
 
-This section explains how to add a first‑class model kind (e.g., like `dash` or `transformer`). The goal is to make your model selectable in the UI and callable via the API, with consistent inputs/outputs.
+This section explains how to add a first‑class model kind (e.g., like `dash` or `transformer`). The goal is to make your model selectable in the UI and callable via the API, with consistent inputs/outputs. Adding a model with this method provides more flexibility for customizing preprocessing, orchestrating inferece, and adding more functionality (like templates) than uploading a Torchscripted model via the endpoint.
 
 ### Assumptions
 
@@ -33,7 +33,7 @@ This section explains how to add a first‑class model kind (e.g., like `dash` o
   - Model loading from `Settings` (path + hyperparams)
   - `.classify(spectrum)` that accepts preprocessed arrays, runs inference on CPU/GPU, and returns a result consistent with existing models
   - Label mapping (transform logits → class names) if needed, similar to `TransformerClassifier`
-- If you need a custom network, add it under `prod_backend/app/infrastructure/ml/classifiers/architectures.py` (or a sibling module) and instantiate it in your classifier.
+- If you need a custom architecture, add it under `prod_backend/app/infrastructure/ml/classifiers/architectures.py` (or a sibling module) and instantiate it in your classifier.
 
 3) Add preprocessing (if needed)
 
@@ -132,90 +132,54 @@ This section explains how to add a first‑class model kind (e.g., like `dash` o
 - Mirror your training preprocessing exactly; subtle differences in interpolation or normalization can degrade performance.
 - Use `torch.device('cuda' if available else 'cpu')` and move tensors/models with `.to(device)` to support both CPU and GPU.
 
-## Add new spectral templates
+## Add model-specific assets/templates for non-DASH models
 
-This section explains how to add new spectral templates for supernova types and age bins to enhance DASH model performance and enable redshift estimation for additional SN classes.
+This section explains how to add the supporting assets ("templates" in a broad sense) required by models other than DASH — for example, statistical normalization files, input-shape specs, lookup tables, or any auxiliary resources your model needs at inference time.
 
 ### Overview
 
-Spectral templates are essential for:
-- **RLAP calculation**: Measuring the quality of spectral matches
-- **Redshift estimation**: Determining cosmological distances using template matching
-- **Template overlays**: Visual comparison between observed and template spectra
+Model assets are used for:
+- **Preprocessing alignment**: Normalization stats, wavelength grids, or tokenizer/featurizer vocabularies
+- **Output interpretation**: Label metadata
+- **Optional lookups**: Any auxiliary tables used by your model during inference
 
-### Template format requirements
+### Asset requirements
 
-Templates must follow the DASH format specification:
+1. **File structure**: Store assets alongside the model or under a clear subdirectory in `/data/pre_trained_models/<your_model>/assets/` (or with user models in `/data/user_models/<model_id>/`).
+2. **Configuration file**: Provide a small JSON/YAML that declares:
+   - `input_shapes`: list(s) of expected input shapes
+   - `preprocessing`: any required normalization parameters or grids
+   - `assets`: paths to auxiliary files the model will read at runtime
+3. **Versioning**: Include an `asset_version` field and update it on changes.
 
-1. **File structure**: Templates are stored in `.npz` format containing:
-   - `snTemplates`: Dictionary with SN types as keys
-   - Each SN type contains age bins as sub-keys
-   - Each age bin contains wavelength arrays and flux arrays
+### Adding assets for a new or user-uploaded model
 
-2. **Data format**:
-   - Wavelength arrays: Log-wavelength grid (typically 32-64 points)
-   - Flux arrays: Normalized flux values (typically 32-64 points)
-   - Age bins: Standardized format (e.g., "2 to 6", "6 to 10", "10 to 15")
+#### Step 1: Prepare assets
 
-### Adding templates for a new SN class
+1. **Define inputs**: Document the exact inputs your model expects (e.g., wavelength/flux/redshift tensors, shapes).
+2. **Normalization**: Export means/stds or other scalars/grids used by training.
+3. **Aux files**: Include any lookup tables or tokenizers needed at inference.
 
-#### Step 1: Prepare template data
+#### Step 2: Place assets
 
-1. **Collect spectra**: Gather high-quality spectra for the new SN type across multiple age bins
-2. **Normalize data**: Ensure all spectra are flux-normalized and on a consistent wavelength grid
-3. **Age binning**: Group spectra into standard age bins (2-6 days, 6-10 days, 10-15 days, etc.)
-4. **Quality control**: Remove spectra with poor signal-to-noise or calibration issues
-
-#### Step 2: Convert to DASH format
-
-1. **Wavelength grid**: Interpolate all spectra to the standard DASH log-wavelength grid
-2. **Flux normalization**: Apply consistent flux normalization across all templates
-3. **Data structure**: Organize into the nested dictionary format expected by DASH
+1. **Location**: Put assets under `/data/user_models/<model_id>/assets/` for user models, or `/data/pre_trained_models/<your_model>/assets/` for built-ins.
+2. **Config**: Add an `model_assets.json` (or `.yaml`) that references these files and declares shapes/mappings.
 
 #### Step 3: Integration
 
-1. **File placement**: Add templates to `prod_backend/app/astrodash_models/sn_and_host_templates.npz`
-2. **Template factory**: Update `prod_backend/app/infrastructure/ml/templates/template_factory.py` if needed
-3. **Validation**: Ensure templates are loaded correctly by the DASH classifier
+1. **Loader**: Ensure the model loader reads your `model_assets.json` and wires preprocessing accordingly (e.g., in the classifier wrapper for that model type).
+2. **Factory/registry**: If introducing a new built-in model type, register it in the model factory so the API can route requests properly.
+3. **Validation**: On startup or upload, validate that shapes are consistent with the serialized model.
 
-### Template validation and testing
+### Validation and testing
 
-1. **Load test**: Verify templates load without errors in the DASH classifier
-2. **RLAP test**: Confirm RLAP calculations work with new templates
-3. **Redshift test**: Test redshift estimation using the new templates
-4. **Visual verification**: Check template overlays in the web interface
+1. **Load test**: Confirm assets are discovered and parsed correctly.
+2. **Shape test**: Verify dummy inputs shaped per `input_shapes` execute end-to-end.
+3. **Repro test**: Run a known file and compare to expected outputs (tolerances as appropriate).
 
 ### Best practices
 
-- **Consistency**: Maintain consistent wavelength grids and flux normalization
-- **Coverage**: Ensure adequate coverage across age bins for reliable classification
-- **Quality**: Use only high-quality, well-calibrated spectra as templates
-- **Documentation**: Document the source and properties of new templates
-- **Versioning**: Keep track of template versions and updates
-
-### Example template structure
-
-```python
-# Example of how templates are structured in the .npz file
-snTemplates = {
-    'Ia': {
-        '2 to 6': {
-            'wavelengths': [...],  # Log-wavelength grid
-            'fluxes': [...]        # Normalized flux values
-        },
-        '6 to 10': {
-            'wavelengths': [...],
-            'fluxes': [...]
-        }
-    },
-    'Ib': {
-        # Similar structure for Ib templates
-    }
-}
-```
-
-### Troubleshooting
-
-- **Template not found**: Check file paths and template loading in the classifier
-- **RLAP calculation errors**: Verify template format and wavelength grid consistency
-- **Poor redshift estimates**: Ensure templates have sufficient spectral features for cross-correlation
+- **Single source of truth**: Keep shapes and normalization in one config that code loads.
+- **Relative paths**: Use paths relative to the asset config for portability.
+- **Schema stability**: Evolve the asset schema with explicit version bumps.
+- **Document assumptions**: Note wavelength ranges, required units, or preprocessing expectations.

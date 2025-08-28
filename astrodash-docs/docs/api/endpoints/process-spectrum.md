@@ -14,7 +14,7 @@ POST /api/v1/process
 
 ## Description
 
-This is the main endpoint for processing and classifying supernova spectra. It accepts either a file upload or an OSC reference, processes the spectrum according to specified parameters, and returns both the processed spectrum data and classification results.
+This is the main endpoint for processing and classifying supernova spectra. It accepts either a file upload or an SN name, processes the spectrum according to specified parameters, and returns both the processed spectrum data and classification results.
 
 ## Request
 
@@ -28,7 +28,7 @@ multipart/form-data
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `file` | File | No* | Spectrum file to upload (FITS, DAT, TXT, LNW, or CSV) |
+| `file` | File | No* | Spectrum file to upload (FITS, DAT, TXT, or LNW) |
 | `params` | String (JSON) | No | Processing parameters as JSON string |
 
 *Either `file` or `oscRef` in params is required.
@@ -39,8 +39,8 @@ The `params` parameter accepts a JSON string with the following fields:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `oscRef` | String | - | OSC reference name (e.g., "osc-sn2011fe-0") |
-| `smoothing` | Integer | 0 | Smoothing parameter (0-10) |
+| `oscRef` | String | - | SN name on Open Supernova Catalog (e.g., "sn2002er") |
+| `smoothing` | Integer | 0 | Smoothing parameter |
 | `knownZ` | Boolean | false | Whether redshift is known |
 | `zValue` | Float | - | Redshift value (required if knownZ=true) |
 | `minWave` | Float | - | Minimum wavelength in Angstroms |
@@ -173,7 +173,7 @@ result = response.json()
 
 1. **File Reading**: Supports FITS, DAT, TXT, and LNW formats
 2. **Wavelength Range**: Optional filtering by min/max wavelength
-3. **Smoothing**: Median filtering with configurable kernel size
+3. **Smoothing**: Savitzy-Golay filtering with configurable kernel size
 4. **Redshift Correction**: Applies known redshift if provided
 5. **Normalization**: Continuum removal and flux normalization
 6. **Classification**: ML model prediction with confidence scores
@@ -191,7 +191,7 @@ The classification includes:
 ## Notes
 
 - **File Size Limit**: 50MB per file
-- **Processing Time**: 1-5 seconds depending on spectrum complexity
+- **Processing Time**: 1-5 seconds depending on spectrum complexity and model used.
 - **Supported Formats**: FITS, DAT, TXT, LNW, CSV
 - **Wavelength Range**: 3500-10000 Angstroms (configurable)
 - **Redshift Range**: 0.0-2.0 (for known redshifts)

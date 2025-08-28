@@ -4,16 +4,16 @@ sidebar_position: 8
 
 # Security & Authentication
 
-AstroDash implements several security measures to protect the API and its users.
+AstroDASH 2.0 implements several security measures to protect the API and its users.
 
 ## Rate Limiting
 
-The API enforces rate limiting to prevent abuse and ensure fair usage.
+The API enforces rate limiting to prevent abuse and ensure fair usage. Rate limits are configurable via environment variables.
 
 ### Limits
-- **Default**: 100 requests per minute per IP address
-- **Burst**: Up to 200 requests in a single minute window
-- **Scope**: Per-endpoint, per-IP basis
+- **Default**: 600 requests per minute per IP address
+- **Burst**: Up to 100 requests in a single minute window
+- **Scope**: Per-IP basis (not per-endpoint)
 
 ### Rate Limit Response
 When rate limits are exceeded, the API returns:
@@ -41,6 +41,13 @@ Content-Type: application/json
 }
 ```
 
+### Configuration
+- **Environment Variables**:
+  - `RATE_LIMIT_REQUESTS_PER_MINUTE`: Default 600 requests/minute
+  - `RATE_LIMIT_BURST_LIMIT`: Default 100 burst requests
+- **Cleanup**: Old rate limit entries are cleaned up every 5 minutes
+- **IP Detection**: Supports proxy headers (X-Forwarded-For, X-Real-IP)
+
 ### Best Practices
 - Implement exponential backoff for retries
 - Respect the `Retry-After` header
@@ -53,42 +60,44 @@ Content-Type: application/json
 The API supports Cross-Origin Resource Sharing for web applications.
 
 ### Allowed Origins
-- Development: `http://localhost:3000`, `http://localhost:3001`
-- Production: Configured per environment
-- Wildcard: `*` (configurable)
+- **Default**: `*` (all origins allowed for API usage)
+- **Configurable**: Can be restricted to specific origins via `CORS_ORIGINS` environment variable
+- **Development**: Can be set to `http://localhost:3000,http://localhost:3001`
+- **Production**: Should be restricted to specific domains for security
 
 ### CORS Headers
 ```
 Access-Control-Allow-Origin: *
 Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
-Access-Control-Allow-Headers: Content-Type, Authorization
-Access-Control-Max-Age: 86400
+Access-Control-Allow-Headers: *
+Access-Control-Max-Age: 3600
 ```
 
 ### Preflight Requests
 OPTIONS requests are automatically handled for:
 - File uploads (multipart/form-data)
 - JSON payloads
-- Custom headers
+- All custom headers (`allow_headers=["*"]`)
+- CORS preflight with 1-hour cache (`max_age=3600`)
 
 ## File Upload Security
 
 ### File Type Validation
-- **Allowed Extensions**: `.fits`, `.dat`, `.txt`, `.lnw`, `.csv`, `.zip`
+- **Allowed Extensions**: `.fits`, `.dat`, `.txt`, `.lnw`, `.csv`
 - **MIME Type Checking**: Server validates actual file content
-- **Size Limits**: 50MB per file, 500MB per ZIP
+- **Size Limits**: 50MB per file, 100MB per request
 
 ### Malicious File Protection
-- File content analysis before processing
-- Rejection of executable files
-- Validation of spectrum data integrity
-- Sanitization of filenames
+- File extension validation against allowed types
+- File size limits (50MB per file, 100MB per request)
+- Basic file content validation during spectrum processing
+- Filename sanitization in error messages
 
 ### Upload Best Practices
 ```python
 # Validate file before upload
 import os
-allowed_extensions = {'.fits', '.dat', '.txt', '.lnw', '.csv', '.zip'}
+allowed_extensions = {'.fits', '.dat', '.txt', '.lnw', '.csv'}
 file_ext = os.path.splitext(filename)[1].lower()
 
 if file_ext not in allowed_extensions:
@@ -97,49 +106,6 @@ if file_ext not in allowed_extensions:
 # Check file size
 if os.path.getsize(filepath) > 50 * 1024 * 1024:  # 50MB
     raise ValueError("File too large")
-```
-
-## Input Validation
-
-### Request Validation
-- **JSON Schema**: FastAPI automatic validation
-- **Type Checking**: Strict type enforcement
-- **Range Validation**: Numeric bounds checking
-- **Required Fields**: Mandatory parameter validation
-
-### Parameter Validation Examples
-
-#### Smoothing Parameter
-```python
-# Must be integer 0-10
-smoothing: int = Field(ge=0, le=10, description="Smoothing kernel size")
-```
-
-#### Wavelength Range
-```python
-# Must be positive and within reasonable bounds
-min_wave: float = Field(gt=0, le=50000, description="Minimum wavelength (Å)")
-max_wave: float = Field(gt=0, le=50000, description="Maximum wavelength (Å)")
-```
-
-#### Redshift Values
-```python
-# Must be within physical limits
-z_value: float = Field(ge=0, le=10, description="Redshift value")
-```
-
-### Validation Error Responses
-```json
-{
-  "detail": [
-    {
-      "loc": ["body", "params", "smoothing"],
-      "msg": "ensure this value is less than or equal to 10",
-      "type": "value_error.any_str.max_length",
-      "ctx": {"limit_value": 10}
-    }
-  ]
-}
 ```
 
 ## Security Headers
@@ -175,8 +141,6 @@ X-Permitted-Cross-Domain-Policies: none
 X-Download-Options: noopen
 X-DNS-Prefetch-Control: off
 ```
-
-
 
 ## Best Practices for Clients
 
@@ -235,6 +199,13 @@ def validate_spectrum_file(filepath):
         if b'<script>' in header.lower():
             raise ValueError("Potentially malicious file content")
 ```
+
+**Note**: The backend automatically validates file extensions and sizes. Supported formats are:
+- `.fits` - FITS astronomical data files
+- `.dat` - ASCII data files
+- `.txt` - Text files with spectrum data
+- `.lnw` - Log wavelength files
+- `.csv` - Comma-separated value files
 
 ## Monitoring & Alerting
 

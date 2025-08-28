@@ -4,7 +4,7 @@ sidebar_position: 6
 
 # Estimate Redshift
 
-Estimate the redshift for a given spectrum and SN type/age.
+Estimate the redshift for a given spectrum and SN type/age via template matching and cross-correlation.
 
 ## Endpoint
 
